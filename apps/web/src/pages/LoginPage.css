@@ -285,3 +285,36 @@
     margin-top: 30px;
   }
 }
+
+
+.auth-message-error {
+  color: #ff8585;
+}
+
+.auth-form button:disabled,
+.auth-submit-button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.auth-success {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  text-align: center;
+  color: var(--ofa-accent);
+}
+
+.auth-success p {
+  color: var(--ofa-muted);
+  font-size: 0.88rem;
+  line-height: 1.6;
+}
+
+.auth-success .auth-submit-button {
+  width: 100%;
+  text-decoration: none;
+  color: #02100e;
+}

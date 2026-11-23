@@ -282,3 +282,55 @@
     padding: 29px 23px;
   }
 }
+
+
+.signup-message-error {
+  color: #ff8585;
+}
+
+.signup-form button:disabled,
+.signup-submit-button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.signup-text-button {
+  padding: 5px;
+  border: 0;
+  background: transparent;
+  color: var(--ofa-accent);
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.signup-text-button:hover {
+  text-decoration: underline;
+}
+
+.signup-text-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.signup-success {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  text-align: center;
+  color: var(--ofa-accent);
+}
+
+.signup-success p {
+  color: var(--ofa-muted);
+  font-size: 0.88rem;
+  line-height: 1.6;
+}
+
+.signup-success .signup-submit-button {
+  width: 100%;
+  text-decoration: none;
+  color: #02100e;
+}
