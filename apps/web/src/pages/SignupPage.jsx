@@ -1,124 +1,144 @@
+
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ArrowLeft,
-  Mail,
   ShieldCheck,
   Fingerprint,
 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { startRegistration } from '@simplewebauthn/browser';
 import './SignupPage.css';
+
+const API_BASE_URL =
+  import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
 function SignupPage() {
   const [fullName, setFullName] = useState('');
-  const [email, setEmail] = useState('');
-  const [otp, setOtp] = useState('');
   const [step, setStep] = useState('details');
   const [loading, setLoading] = useState(false);
+  const [registration, setRegistration] = useState(null);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
-  const sendOtp = async (event) => {
+  const requestRegistrationOptions = async (event) => {
     event.preventDefault();
-    setLoading(true);
-    setError('');
-    setMessage('');
 
-    const normalizedEmail = email.trim().toLowerCase();
-
-    const { error: otpError } = await supabase.auth.signInWithOtp({
-      email: normalizedEmail,
-      options: {
-        shouldCreateUser: true,
-        data: {
-          full_name: fullName.trim(),
-        },
-      },
-    });
-
-    setLoading(false);
-
-    if (otpError) {
-      setError(otpError.message);
-      return;
-    }
-
-    setEmail(normalizedEmail);
-    setStep('otp');
-    setMessage('A verification code has been sent to your email.');
-  };
-
-  const verifyOtp = async (event) => {
-    event.preventDefault();
-    setLoading(true);
-    setError('');
-    setMessage('');
-
-    const { error: verifyError } = await supabase.auth.verifyOtp({
-      email: email.trim().toLowerCase(),
-      token: otp.trim(),
-      type: 'email',
-    });
-
-    setLoading(false);
-
-    if (verifyError) {
-      setError(verifyError.message);
-      return;
-    }
-
-    setStep('passkey');
-    setMessage('Email verified! Now register your passkey.');
-  };
-
-  const registerPasskey = async () => {
     setLoading(true);
     setError('');
     setMessage('');
 
     try {
-      const { error: passkeyError } =
-        await supabase.auth.registerPasskey();
+      const response = await fetch(
+        `${API_BASE_URL}/api/auth/register/options`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            displayName: fullName.trim(),
+          }),
+        }
+      );
 
-      if (passkeyError) {
-        setError(passkeyError.message);
-        return;
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(
+          result.message || 'Unable to start registration.'
+        );
       }
 
-      setStep('complete');
-      setMessage('Your passkey has been registered successfully!');
-    } catch (passkeyError) {
+      setRegistration({
+        userId: result.userId,
+        challengeId: result.challengeId,
+        options: result.options,
+      });
+
+      setStep('passkey');
+      setMessage(
+        'Your identity is ready. Register a passkey to continue.'
+      );
+    } catch (requestError) {
       setError(
-        passkeyError.message || 'Unable to register your passkey.'
+        requestError.message ||
+          'Unable to connect to the Unwind OFA server.'
       );
     } finally {
       setLoading(false);
     }
   };
 
-  const resendOtp = async () => {
+  const registerPasskey = async () => {
+    if (!registration) {
+      setError('Registration details are missing. Please try again.');
+      return;
+    }
+
     setLoading(true);
     setError('');
     setMessage('');
 
-    const { error: resendError } = await supabase.auth.signInWithOtp({
-      email: email.trim().toLowerCase(),
-      options: {
-        shouldCreateUser: true,
-        data: {
-          full_name: fullName.trim(),
-        },
-      },
-    });
+    try {
+      // Open the browser's native passkey registration prompt.
+      const credential = await startRegistration({
+        optionsJSON: registration.options,
+      });
 
-    setLoading(false);
+      // Verify the authenticator response with the OFA backend.
+      const response = await fetch(
+        `${API_BASE_URL}/api/auth/register/verify`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            userId: registration.userId,
+            challengeId: registration.challengeId,
+            response: credential,
+          }),
+        }
+      );
 
-    if (resendError) {
-      setError(resendError.message);
-      return;
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(
+          result.message || 'Passkey registration failed.'
+        );
+      }
+
+      setStep('complete');
+      setMessage(
+        'Your Unwind OFA passkey has been registered successfully.'
+      );
+    } catch (registrationError) {
+      console.error(
+        'Passkey registration failed:',
+        registrationError
+      );
+
+      if (registrationError.name === 'NotAllowedError') {
+        setError(
+          'Passkey registration was cancelled or not allowed. Please try again.'
+        );
+      } else {
+        setError(
+          registrationError.message ||
+            'Unable to register your passkey. Please try again.'
+        );
+      }
+    } finally {
+      setLoading(false);
     }
+  };
 
-    setMessage('A new verification code has been sent.');
+  const restartRegistration = () => {
+    setRegistration(null);
+    setStep('details');
+    setError('');
+    setMessage('');
   };
 
   return (
@@ -133,6 +153,7 @@ function SignupPage() {
           <span className="signup-brand-icon">
             <ShieldCheck size={23} />
           </span>
+
           <span>
             unwind<span className="signup-brand-highlight">ofa</span>
           </span>
@@ -140,67 +161,71 @@ function SignupPage() {
 
         <div className="signup-heading">
           <span className="signup-eyebrow">
-            {step === 'passkey' || step === 'complete'
-              ? 'PASSKEY SECURITY'
-              : 'PASSWORDLESS REGISTRATION'}
+            {step === 'details'
+              ? 'PASSWORDLESS REGISTRATION'
+              : 'PASSKEY SECURITY'}
           </span>
 
           <h1>
             {step === 'details' && (
-              <>Your security starts <span>here.</span></>
+              <>
+                Your security starts <span>here.</span>
+              </>
             )}
-            {step === 'otp' && (
-              <>Verify your <span>email.</span></>
-            )}
+
             {step === 'passkey' && (
-              <>Secure your <span>identity.</span></>
+              <>
+                Secure your <span>identity.</span>
+              </>
             )}
+
             {step === 'complete' && (
-              <>Welcome to <span>Unwind.</span></>
+              <>
+                Welcome to <span>Unwind.</span>
+              </>
             )}
           </h1>
 
           <p>
             {step === 'details' &&
-              'Create your Unwind OFA account and get started.'}
-            {step === 'otp' &&
-              `Enter the six-digit code sent to ${email}.`}
+              'Create your Unwind OFA identity using a passkey. No password or email verification required.'}
+
             {step === 'passkey' &&
-              'Register a passkey to sign in securely using your device.'}
+              'Create a passkey using your device biometrics, Windows Hello, device PIN, or a supported security key.'}
+
             {step === 'complete' &&
-              'Your account and passkey are ready.'}
+              'Your Unwind OFA identity and passkey have been successfully registered.'}
           </p>
         </div>
 
         {step === 'details' && (
-          <form className="signup-form" onSubmit={sendOtp}>
+          <form
+            className="signup-form"
+            onSubmit={requestRegistrationOptions}
+          >
             <label htmlFor="signup-name">Full name</label>
+
             <input
               id="signup-name"
               type="text"
               placeholder="Your name"
               autoComplete="name"
+              minLength={2}
+              maxLength={60}
               value={fullName}
-              onChange={(event) => setFullName(event.target.value)}
-              required
-            />
-
-            <label htmlFor="signup-email">Email address</label>
-            <input
-              id="signup-email"
-              type="email"
-              placeholder="you@example.com"
-              autoComplete="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
+              onChange={(event) =>
+                setFullName(event.target.value)
+              }
               required
             />
 
             <label className="signup-terms">
               <input type="checkbox" required />
+
               <span>
-                I agree to the <a href="#terms">Terms of Service</a> and{' '}
-                <a href="#privacy">Privacy Policy</a>.
+                I agree to the{' '}
+                <Link to="/terms">Terms of Service</Link> and{' '}
+                <Link to="/privacy">Privacy Policy</Link>.
               </span>
             </label>
 
@@ -209,61 +234,11 @@ function SignupPage() {
               className="signup-submit-button"
               disabled={loading}
             >
-              {loading ? 'Sending code...' : 'Verify email'}
-              <Mail size={18} />
-            </button>
-          </form>
-        )}
+              {loading
+                ? 'Preparing registration...'
+                : 'Continue with passkey'}
 
-        {step === 'otp' && (
-          <form className="signup-form" onSubmit={verifyOtp}>
-            <label htmlFor="signup-otp">
-              Six-digit verification code
-            </label>
-
-            <input
-              id="signup-otp"
-              type="text"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              placeholder="000000"
-              maxLength={6}
-              pattern="[0-9]{6}"
-              value={otp}
-              onChange={(event) =>
-                setOtp(event.target.value.replace(/\D/g, ''))
-              }
-              required
-            />
-
-            <button
-              type="submit"
-              className="signup-submit-button"
-              disabled={loading}
-            >
-              {loading ? 'Verifying...' : 'Verify email'}
-            </button>
-
-            <button
-              type="button"
-              className="signup-text-button"
-              onClick={resendOtp}
-              disabled={loading}
-            >
-              Resend verification code
-            </button>
-
-            <button
-              type="button"
-              className="signup-text-button"
-              onClick={() => {
-                setStep('details');
-                setOtp('');
-                setError('');
-                setMessage('');
-              }}
-            >
-              Change account details
+              <Fingerprint size={18} />
             </button>
           </form>
         )}
@@ -273,8 +248,8 @@ function SignupPage() {
             <Fingerprint size={42} />
 
             <p>
-              Use Windows Hello, your device biometrics, a device PIN,
-              or a supported security key to create your passkey.
+              Your account registration has been prepared.
+              Continue to create your passkey using your device.
             </p>
 
             <button
@@ -283,8 +258,20 @@ function SignupPage() {
               onClick={registerPasskey}
               disabled={loading}
             >
-              {loading ? 'Registering passkey...' : 'Register my passkey'}
+              {loading
+                ? 'Registering passkey...'
+                : 'Register my passkey'}
+
               <Fingerprint size={18} />
+            </button>
+
+            <button
+              type="button"
+              className="signup-text-button"
+              onClick={restartRegistration}
+              disabled={loading}
+            >
+              Start again
             </button>
           </div>
         )}
@@ -294,12 +281,18 @@ function SignupPage() {
             <ShieldCheck size={42} />
 
             <p>
-              Your identity is authenticated and your passkey is
-              registered. You can now use it for future sign-ins.
+              Your passkey is registered successfully.
+              Your public credential has been securely saved
+              by Unwind OFA.
             </p>
 
-            <Link to="/dashboard" className="signup-submit-button">
-              Continue to dashboard
+            <p>
+              Sign-in and session creation will be available
+              in the next authentication milestone.
+            </p>
+
+            <Link to="/" className="signup-submit-button">
+              Return home
             </Link>
           </div>
         )}
@@ -321,13 +314,17 @@ function SignupPage() {
 
         {step !== 'complete' && (
           <p className="signup-switch">
-            Already have an account? <Link to="/login">Sign in</Link>
+            Already have an account?{' '}
+            <Link to="/login">Sign in</Link>
           </p>
         )}
 
         <div className="signup-security-note">
           <ShieldCheck size={16} />
-          <span>One identity. A more secure Unwind ecosystem.</span>
+
+          <span>
+            One identity. A more secure Unwind ecosystem.
+          </span>
         </div>
       </div>
 
