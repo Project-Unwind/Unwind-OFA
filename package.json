@@ -1,0 +1,21 @@
+{
+  "name": "unwind-ofa",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "npm run dev --workspace @unwind-ofa/web",
+    "dev:api": "npm run dev --workspace @unwind-ofa/api",
+    "build": "npm run build --workspace @unwind-ofa/web"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "private": "true",
+  "workspaces": [
+    "apps/web",
+    "apps/api"
+  ]
+}
