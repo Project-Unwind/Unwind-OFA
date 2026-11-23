@@ -1,6 +1,11 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Mail, ShieldCheck } from 'lucide-react';
+import {
+  ArrowLeft,
+  Mail,
+  ShieldCheck,
+  Fingerprint,
+} from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import './SignupPage.css';
 
@@ -62,8 +67,33 @@ function SignupPage() {
       return;
     }
 
-    setStep('verified');
-    setMessage('Your account has been created and verified successfully!');
+    setStep('passkey');
+    setMessage('Email verified! Now register your passkey.');
+  };
+
+  const registerPasskey = async () => {
+    setLoading(true);
+    setError('');
+    setMessage('');
+
+    try {
+      const { error: passkeyError } =
+        await supabase.auth.registerPasskey();
+
+      if (passkeyError) {
+        setError(passkeyError.message);
+        return;
+      }
+
+      setStep('complete');
+      setMessage('Your passkey has been registered successfully!');
+    } catch (passkeyError) {
+      setError(
+        passkeyError.message || 'Unable to register your passkey.'
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
   const resendOtp = async () => {
@@ -103,20 +133,42 @@ function SignupPage() {
           <span className="signup-brand-icon">
             <ShieldCheck size={23} />
           </span>
-          <span>unwind<span className="signup-brand-highlight">ofa</span></span>
+          <span>
+            unwind<span className="signup-brand-highlight">ofa</span>
+          </span>
         </Link>
 
         <div className="signup-heading">
-          <span className="signup-eyebrow">PASSWORDLESS REGISTRATION</span>
+          <span className="signup-eyebrow">
+            {step === 'passkey' || step === 'complete'
+              ? 'PASSKEY SECURITY'
+              : 'PASSWORDLESS REGISTRATION'}
+          </span>
+
           <h1>
-            {step === 'details' && <>Your security starts <span>here.</span></>}
-            {step === 'otp' && <>Verify your <span>email.</span></>}
-            {step === 'verified' && <>Welcome to <span>Unwind.</span></>}
+            {step === 'details' && (
+              <>Your security starts <span>here.</span></>
+            )}
+            {step === 'otp' && (
+              <>Verify your <span>email.</span></>
+            )}
+            {step === 'passkey' && (
+              <>Secure your <span>identity.</span></>
+            )}
+            {step === 'complete' && (
+              <>Welcome to <span>Unwind.</span></>
+            )}
           </h1>
+
           <p>
-            {step === 'details' && 'Create your Unwind OFA account with secure email verification.'}
-            {step === 'otp' && `Enter the six-digit code sent to ${email}.`}
-            {step === 'verified' && 'Your Unwind OFA account is ready.'}
+            {step === 'details' &&
+              'Create your Unwind OFA account and get started.'}
+            {step === 'otp' &&
+              `Enter the six-digit code sent to ${email}.`}
+            {step === 'passkey' &&
+              'Register a passkey to sign in securely using your device.'}
+            {step === 'complete' &&
+              'Your account and passkey are ready.'}
           </p>
         </div>
 
@@ -152,8 +204,12 @@ function SignupPage() {
               </span>
             </label>
 
-            <button type="submit" className="signup-submit-button" disabled={loading}>
-              {loading ? 'Sending code...' : 'Send verification code'}
+            <button
+              type="submit"
+              className="signup-submit-button"
+              disabled={loading}
+            >
+              {loading ? 'Sending code...' : 'Verify email'}
               <Mail size={18} />
             </button>
           </form>
@@ -161,7 +217,10 @@ function SignupPage() {
 
         {step === 'otp' && (
           <form className="signup-form" onSubmit={verifyOtp}>
-            <label htmlFor="signup-otp">Six-digit verification code</label>
+            <label htmlFor="signup-otp">
+              Six-digit verification code
+            </label>
+
             <input
               id="signup-otp"
               type="text"
@@ -171,12 +230,18 @@ function SignupPage() {
               maxLength={6}
               pattern="[0-9]{6}"
               value={otp}
-              onChange={(event) => setOtp(event.target.value.replace(/\D/g, ''))}
+              onChange={(event) =>
+                setOtp(event.target.value.replace(/\D/g, ''))
+              }
               required
             />
 
-            <button type="submit" className="signup-submit-button" disabled={loading}>
-              {loading ? 'Verifying...' : 'Verify and create account'}
+            <button
+              type="submit"
+              className="signup-submit-button"
+              disabled={loading}
+            >
+              {loading ? 'Verifying...' : 'Verify email'}
             </button>
 
             <button
@@ -203,20 +268,58 @@ function SignupPage() {
           </form>
         )}
 
-        {step === 'verified' && (
+        {step === 'passkey' && (
           <div className="signup-success">
-            <ShieldCheck size={38} />
-            <p>Your account has been authenticated successfully.</p>
-            <Link to="/" className="signup-submit-button">
-              Continue to Unwind OFA
+            <Fingerprint size={42} />
+
+            <p>
+              Use Windows Hello, your device biometrics, a device PIN,
+              or a supported security key to create your passkey.
+            </p>
+
+            <button
+              type="button"
+              className="signup-submit-button"
+              onClick={registerPasskey}
+              disabled={loading}
+            >
+              {loading ? 'Registering passkey...' : 'Register my passkey'}
+              <Fingerprint size={18} />
+            </button>
+          </div>
+        )}
+
+        {step === 'complete' && (
+          <div className="signup-success">
+            <ShieldCheck size={42} />
+
+            <p>
+              Your identity is authenticated and your passkey is
+              registered. You can now use it for future sign-ins.
+            </p>
+
+            <Link to="/dashboard" className="signup-submit-button">
+              Continue to dashboard
             </Link>
           </div>
         )}
 
-        {error && <p className="signup-message signup-message-error" role="alert">{error}</p>}
-        {message && <p className="signup-message" role="status">{message}</p>}
+        {error && (
+          <p
+            className="signup-message signup-message-error"
+            role="alert"
+          >
+            {error}
+          </p>
+        )}
 
-        {step !== 'verified' && (
+        {message && (
+          <p className="signup-message" role="status">
+            {message}
+          </p>
+        )}
+
+        {step !== 'complete' && (
           <p className="signup-switch">
             Already have an account? <Link to="/login">Sign in</Link>
           </p>
