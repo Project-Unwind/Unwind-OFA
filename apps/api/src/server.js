@@ -9,6 +9,8 @@ const authRoutes = require('./routes/authRoutes');
 
 const app = express();
 
+app.set('trust proxy', 'loopback');
+
 app.use(helmet());
 
 app.use(cors({

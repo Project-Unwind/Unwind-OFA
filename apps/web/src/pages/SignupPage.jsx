@@ -9,7 +9,7 @@ import { startRegistration } from '@simplewebauthn/browser';
 import './SignupPage.css';
 
 const API_BASE_URL =
-  import.meta.env.VITE_API_URL || 'http://localhost:4000';
+  import.meta.env.VITE_API_URL || '';
 
 function SignupPage() {
   const [fullName, setFullName] = useState('');
