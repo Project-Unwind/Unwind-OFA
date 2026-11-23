@@ -1,87 +1,110 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
-import { ArrowLeft, Mail, ShieldCheck } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { Link, useNavigate } from 'react-router-dom';
+import {
+  ArrowLeft,
+  ShieldCheck,
+  Fingerprint,
+} from 'lucide-react';
+import { startAuthentication } from '@simplewebauthn/browser';
+import { useAuth } from '../context/AuthContext';
 import './LoginPage.css';
 
+const API_BASE_URL =
+  import.meta.env.VITE_API_URL || 'http://localhost:4000';
+
 function LoginPage() {
-  const [email, setEmail] = useState('');
-  const [otp, setOtp] = useState('');
-  const [step, setStep] = useState('email');
+  const navigate = useNavigate();
+  const { refreshSession } = useAuth();
+
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
-  const sendOtp = async (event) => {
-    event.preventDefault();
+  const signInWithPasskey = async () => {
     setLoading(true);
     setError('');
     setMessage('');
 
-    const normalizedEmail = email.trim().toLowerCase();
+    try {
+      // Request discoverable passkey authentication options.
+      const optionsResponse = await fetch(
+        `${API_BASE_URL}/api/auth/login/options`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          credentials: 'include',
+        }
+      );
 
-    const { error: otpError } = await supabase.auth.signInWithOtp({
-      email: normalizedEmail,
-      options: {
-        shouldCreateUser: false,
-      },
-    });
+      const optionsResult = await optionsResponse.json();
 
-    setLoading(false);
+      if (!optionsResponse.ok || !optionsResult.success) {
+        throw new Error(
+          optionsResult.message ||
+            'Unable to start passkey sign-in.'
+        );
+      }
 
-    if (otpError) {
-      setError(otpError.message);
-      return;
+      // Open the browser's native passkey prompt.
+      const authenticationResponse = await startAuthentication({
+        optionsJSON: optionsResult.options,
+      });
+
+      // Verify the passkey with the OFA backend.
+      const verifyResponse = await fetch(
+        `${API_BASE_URL}/api/auth/login/verify`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          credentials: 'include',
+          body: JSON.stringify({
+            challengeId: optionsResult.challengeId,
+            response: authenticationResponse,
+          }),
+        }
+      );
+
+      const verifyResult = await verifyResponse.json();
+
+      if (!verifyResponse.ok || !verifyResult.success) {
+        throw new Error(
+          verifyResult.message ||
+            'Passkey authentication failed.'
+        );
+      }
+
+      // Confirm that the server-issued session cookie works.
+      const sessionResult = await refreshSession();
+
+      if (!sessionResult.authenticated) {
+        throw new Error(
+          'Authentication succeeded, but your session could not be established.'
+        );
+      }
+
+      setMessage('You have successfully signed in.');
+
+      navigate('/dashboard', { replace: true });
+    } catch (signInError) {
+      console.error('Passkey sign-in failed:', signInError);
+
+      if (signInError.name === 'NotAllowedError') {
+        setError(
+          'Passkey sign-in was cancelled or not allowed. Please try again.'
+        );
+      } else {
+        setError(
+          signInError.message ||
+            'Unable to sign in. Please try again.'
+        );
+      }
+    } finally {
+      setLoading(false);
     }
-
-    setEmail(normalizedEmail);
-    setStep('otp');
-    setMessage('A verification code has been sent to your email.');
-  };
-
-  const verifyOtp = async (event) => {
-    event.preventDefault();
-    setLoading(true);
-    setError('');
-    setMessage('');
-
-    const { error: verifyError } = await supabase.auth.verifyOtp({
-      email: email.trim().toLowerCase(),
-      token: otp.trim(),
-      type: 'email',
-    });
-
-    setLoading(false);
-
-    if (verifyError) {
-      setError(verifyError.message);
-      return;
-    }
-
-    setStep('verified');
-    setMessage('Your email has been verified. You are now signed in!');
-  };
-
-  const resendOtp = async () => {
-    setLoading(true);
-    setError('');
-    setMessage('');
-
-    const { error: resendError } = await supabase.auth.signInWithOtp({
-      email: email.trim().toLowerCase(),
-      options: {
-        shouldCreateUser: false,
-      },
-    });
-
-    setLoading(false);
-
-    if (resendError) {
-      setError(resendError.message);
-      return;
-    }
-
-    setMessage('A new verification code has been sent.');
   };
 
   return (
@@ -96,109 +119,75 @@ function LoginPage() {
           <span className="auth-brand-icon">
             <ShieldCheck size={23} />
           </span>
-          <span>unwind<span className="auth-brand-highlight">ofa</span></span>
+
+          <span>
+            unwind<span className="auth-brand-highlight">ofa</span>
+          </span>
         </Link>
 
         <div className="auth-heading">
-          <span className="auth-eyebrow">PASSWORDLESS SIGN IN</span>
+          <span className="auth-eyebrow">
+            PASSWORDLESS SIGN IN
+          </span>
+
           <h1>
-            {step === 'email' && <>Welcome <span>back.</span></>}
-            {step === 'otp' && <>Check your <span>inbox.</span></>}
-            {step === 'verified' && <>You're <span>signed in.</span></>}
+            Welcome <span>back.</span>
           </h1>
+
           <p>
-            {step === 'email' && 'Sign in securely using a one-time verification code.'}
-            {step === 'otp' && `Enter the six-digit code sent to ${email}.`}
-            {step === 'verified' && 'Your Unwind OFA account is now authenticated.'}
+            Sign in securely using your registered passkey.
+            No password or email verification required.
           </p>
         </div>
 
-        {step === 'email' && (
-          <form className="auth-form" onSubmit={sendOtp}>
-            <label htmlFor="login-email">Email address</label>
-            <input
-              id="login-email"
-              type="email"
-              placeholder="you@example.com"
-              autoComplete="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              required
-            />
+        <div className="auth-success">
+          <Fingerprint size={42} />
 
-            <button type="submit" className="auth-submit-button" disabled={loading}>
-              {loading ? 'Sending code...' : 'Send verification code'}
-              <Mail size={18} />
-            </button>
-          </form>
-        )}
+          <p>
+            Use your device's biometric authentication,
+            Windows Hello, device PIN, or another supported
+            passkey authenticator.
+          </p>
 
-        {step === 'otp' && (
-          <form className="auth-form" onSubmit={verifyOtp}>
-            <label htmlFor="login-otp">Six-digit verification code</label>
-            <input
-              id="login-otp"
-              type="text"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              placeholder="000000"
-              maxLength={6}
-              pattern="[0-9]{6}"
-              value={otp}
-              onChange={(event) => setOtp(event.target.value.replace(/\D/g, ''))}
-              required
-            />
+          <button
+            type="button"
+            className="auth-submit-button"
+            onClick={signInWithPasskey}
+            disabled={loading}
+          >
+            {loading
+              ? 'Waiting for passkey...'
+              : 'Sign in with passkey'}
 
-            <button type="submit" className="auth-submit-button" disabled={loading}>
-              {loading ? 'Verifying...' : 'Verify and sign in'}
-            </button>
+            <Fingerprint size={18} />
+          </button>
+        </div>
 
-            <button
-              type="button"
-              className="auth-text-button"
-              onClick={resendOtp}
-              disabled={loading}
-            >
-              Resend verification code
-            </button>
-
-            <button
-              type="button"
-              className="auth-text-button"
-              onClick={() => {
-                setStep('email');
-                setOtp('');
-                setError('');
-                setMessage('');
-              }}
-            >
-              Change email address
-            </button>
-          </form>
-        )}
-
-        {step === 'verified' && (
-          <div className="auth-success">
-            <ShieldCheck size={38} />
-            <p>Your authentication session has been established successfully.</p>
-            <Link to="/" className="auth-submit-button">
-              Continue to Unwind OFA
-            </Link>
-          </div>
-        )}
-
-        {error && <p className="auth-message auth-message-error" role="alert">{error}</p>}
-        {message && <p className="auth-message" role="status">{message}</p>}
-
-        {step !== 'verified' && (
-          <p className="auth-switch">
-            Don't have an account? <Link to="/signup">Create one</Link>
+        {error && (
+          <p
+            className="auth-message auth-message-error"
+            role="alert"
+          >
+            {error}
           </p>
         )}
 
+        {message && (
+          <p className="auth-message" role="status">
+            {message}
+          </p>
+        )}
+
+        <p className="auth-switch">
+          Don't have an account?{' '}
+          <Link to="/signup">Create one</Link>
+        </p>
+
         <div className="auth-security-note">
           <ShieldCheck size={16} />
-          <span>Your security is at the heart of everything.</span>
+          <span>
+            Your security is at the heart of everything.
+          </span>
         </div>
       </div>
 

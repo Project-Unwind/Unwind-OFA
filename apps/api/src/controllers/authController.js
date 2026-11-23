@@ -526,43 +526,60 @@ async function loginVerify(req, res) {
       });
     }
 
-    // Verify the discoverable credential's user handle.
+    
+    // Verify the discoverable credential's user handle
+    // when the authenticator provides one.
+    //
+    // Some authenticators omit userHandle even when the
+    // credential ID is available. The credential ID has
+    // already been matched to a stored account above.
     const suppliedUserHandle = response.userHandle;
 
     if (
-      typeof suppliedUserHandle !== 'string' ||
-      !suppliedUserHandle
+      suppliedUserHandle !== undefined &&
+      suppliedUserHandle !== null &&
+      suppliedUserHandle !== ''
     ) {
-      return res.status(401).json({
-        success: false,
-        message: 'The passkey did not provide a valid account handle.',
-      });
-    }
+      if (
+        typeof suppliedUserHandle !== 'string' ||
+        !/^[A-Za-z0-9_-]+$/.test(suppliedUserHandle)
+      ) {
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid passkey account handle.',
+        });
+      }
 
-    let decodedUserHandle;
-
-    try {
-      decodedUserHandle = Buffer.from(
+      const decodedUserHandle = Buffer.from(
         suppliedUserHandle,
         'base64url'
       );
-    } catch {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid passkey account handle.',
-      });
-    }
 
-    const expectedUserHandle = Buffer.from(
-      user.id.replace(/-/g, ''),
-      'hex'
-    );
+      // Require canonical base64url encoding.
+      if (
+        decodedUserHandle.toString('base64url') !==
+        suppliedUserHandle
+      ) {
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid passkey account handle.',
+        });
+      }
 
-    if (!decodedUserHandle.equals(expectedUserHandle)) {
-      return res.status(401).json({
-        success: false,
-        message: 'Passkey account verification failed.',
-      });
+      const expectedUserHandle = Buffer.from(
+        user.id.replace(/-/g, ''),
+        'hex'
+      );
+
+      if (
+        decodedUserHandle.length !== expectedUserHandle.length ||
+        !decodedUserHandle.equals(expectedUserHandle)
+      ) {
+        return res.status(401).json({
+          success: false,
+          message: 'Passkey account verification failed.',
+        });
+      }
     }
 
     // Verify the cryptographic authentication response.
