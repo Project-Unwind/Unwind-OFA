@@ -190,7 +190,7 @@ function SignupPage() {
               'Create your Unwind OFA identity using a passkey. No password or email verification required.'}
 
             {step === 'passkey' &&
-              'Create a passkey using your device biometrics, Windows Hello, device PIN, or a supported security key.'}
+  'Register using your device’s built-in authentication. Your device may use fingerprint recognition, Face ID, Windows Hello, or another supported screen-lock verification method.'}
 
             {step === 'complete' &&
               'Your Unwind OFA identity and passkey have been successfully registered.'}
@@ -247,8 +247,11 @@ function SignupPage() {
             <Fingerprint size={42} />
 
             <p>
-              Your account registration has been prepared.
-              Continue to create your passkey using your device.
+              <p>
+  Your device will securely verify your identity
+  using its supported fingerprint, facial recognition,
+  or screen-lock authentication.
+</p>
             </p>
 
             <button
@@ -290,9 +293,9 @@ function SignupPage() {
               in the next authentication milestone.
             </p>
 
-            <Link to="/" className="signup-submit-button">
-              Return home
-            </Link>
+            <Link to="/login" className="signup-submit-button">
+  Sign in with your passkey
+</Link>
           </div>
         )}
 

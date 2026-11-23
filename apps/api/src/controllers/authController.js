@@ -113,10 +113,11 @@ async function registerOptions(req, res) {
 
       attestationType: 'none',
 
-      authenticatorSelection: {
+     authenticatorSelection: {
+        authenticatorAttachment: 'platform',
         residentKey: 'required',
         userVerification: 'required',
-      },
+    },
 
       timeout: 60000,
     });

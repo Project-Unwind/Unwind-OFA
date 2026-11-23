@@ -64,34 +64,37 @@ export function AuthProvider({ children }) {
   }, []);
 
   async function refreshSession() {
-    setLoading(true);
+  setLoading(true);
 
-    try {
-      const response = await fetch(
-        `${API_BASE_URL}/api/auth/session`,
-        {
-          method: 'GET',
-          credentials: 'include',
-        }
-      );
-
-      const result = await response.json();
-
-      if (!response.ok || !result.success) {
-        throw new Error(
-          result.message || 'Unable to refresh your session.'
-        );
+  try {
+    const response = await fetch(
+      `${API_BASE_URL}/api/auth/session`,
+      {
+        method: 'GET',
+        credentials: 'include',
       }
+    );
 
-      setUser(
-        result.authenticated ? result.user : null
+    const result = await response.json();
+
+    if (!response.ok || !result.success) {
+      throw new Error(
+        result.message || 'Unable to refresh your session.'
       );
-
-      return result;
-    } finally {
-      setLoading(false);
     }
+
+    setUser(
+      result.authenticated ? result.user : null
+    );
+
+    return result;
+  } catch (error) {
+    setUser(null);
+    throw error;
+  } finally {
+    setLoading(false);
   }
+}
 
   async function signOut() {
     const response = await fetch(

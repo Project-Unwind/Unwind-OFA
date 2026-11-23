@@ -135,8 +135,11 @@ function LoginPage() {
           </h1>
 
           <p>
-            Sign in securely using your registered passkey.
-            No password or email verification required.
+            <p>
+  Sign in using your device's built-in authentication.
+  Use fingerprint recognition, Face ID, Windows Hello,
+  or another supported passkey verification method.
+</p>
           </p>
         </div>
 
@@ -144,9 +147,11 @@ function LoginPage() {
           <Fingerprint size={42} />
 
           <p>
-            Use your device's biometric authentication,
-            Windows Hello, device PIN, or another supported
-            passkey authenticator.
+            <p>
+  Authenticate securely with your device's fingerprint
+  sensor, facial recognition, or supported screen-lock
+  verification.
+</p>
           </p>
 
           <button
