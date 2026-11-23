@@ -1,0 +1,134 @@
+.ofa-navbar {
+  height: 82px;
+  padding: 0 8%;
+  display: flex;
+  align-items: center;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: rgba(2, 6, 6, 0.92);
+  border-bottom: 1px solid var(--ofa-border);
+  backdrop-filter: blur(20px);
+}
+
+.ofa-navbar-inner {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.ofa-brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  flex-shrink: 0;
+}
+
+.ofa-brand-icon {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  color: var(--ofa-accent);
+  border: 1px solid rgba(22, 245, 208, 0.3);
+  border-radius: 13px;
+  background: rgba(22, 245, 208, 0.07);
+}
+
+.ofa-brand-copy strong {
+  display: block;
+  font: 700 23px var(--ofa-font-heading);
+  letter-spacing: -1.2px;
+}
+
+.ofa-brand-copy strong span {
+  color: var(--ofa-accent);
+}
+
+.ofa-brand-copy small {
+  display: block;
+  margin-top: 1px;
+  color: var(--ofa-muted);
+  font-size: 9px;
+  letter-spacing: 2.5px;
+}
+
+.ofa-nav-links {
+  display: flex;
+  align-items: center;
+  gap: 34px;
+}
+
+.ofa-nav-links > a {
+  color: #a5b6b1;
+  font-size: 13px;
+  transition: color 0.2s;
+}
+
+.ofa-nav-links > a:hover,
+.ofa-nav-links > a.active {
+  color: var(--ofa-accent);
+}
+
+.ofa-nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  margin-left: 12px;
+}
+
+.ofa-login-link {
+  color: #a5b6b1;
+  font-size: 13px;
+}
+
+.ofa-login-link:hover {
+  color: var(--ofa-accent);
+}
+
+.ofa-nav-actions .ofa-button {
+  min-height: 39px;
+  padding: 0 16px;
+}
+
+.ofa-mobile-menu {
+  display: none;
+  color: var(--ofa-accent);
+  background: transparent;
+  border: 0;
+}
+
+@media (max-width: 850px) {
+  .ofa-navbar {
+    padding: 0 5%;
+  }
+
+  .ofa-mobile-menu {
+    display: grid;
+    place-items: center;
+  }
+
+  .ofa-nav-links {
+    display: none;
+    position: absolute;
+    top: 81px;
+    left: 0;
+    right: 0;
+    padding: 25px 5%;
+    align-items: stretch;
+    flex-direction: column;
+    gap: 24px;
+    background: #071010;
+    border-bottom: 1px solid var(--ofa-border);
+  }
+
+  .ofa-nav-links.is-open {
+    display: flex;
+  }
+
+  .ofa-nav-actions {
+    margin: 0;
+    flex-wrap: wrap;
+  }
+}

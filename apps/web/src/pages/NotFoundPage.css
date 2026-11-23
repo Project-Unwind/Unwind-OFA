@@ -1,0 +1,36 @@
+.ofa-not-found {
+  min-height: 70vh;
+  padding: 60px 20px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+}
+
+.ofa-not-found > span {
+  color: var(--ofa-accent);
+  font: 700 100px var(--ofa-font-heading);
+}
+
+.ofa-not-found h1 {
+  margin: 10px 0;
+  font: 600 32px var(--ofa-font-heading);
+}
+
+.ofa-not-found p {
+  color: var(--ofa-muted);
+}
+
+.ofa-not-found a {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 20px;
+  padding: 13px 20px;
+  color: #00110e;
+  background: var(--ofa-accent);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+}
