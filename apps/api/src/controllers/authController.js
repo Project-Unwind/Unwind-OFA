@@ -1,13 +1,36 @@
-const { randomUUID } = require('node:crypto');
+const {
+  randomUUID,
+  randomBytes,
+  createHash,
+} = require('node:crypto');
+
 const { z } = require('zod');
 
 const {
   generateRegistrationOptions,
   verifyRegistrationResponse,
+  generateAuthenticationOptions,
+  verifyAuthenticationResponse,
 } = require('@simplewebauthn/server');
 
 const { supabase } = require('../config/supabase');
 const { webauthnConfig } = require('../config/webauthn');
+
+const SESSION_DURATION_MS = 7 * 24 * 60 * 60 * 1000;
+
+const isProduction = process.env.NODE_ENV === 'production';
+
+const SESSION_COOKIE_NAME = isProduction
+  ? '__Host-ofa_session'
+  : 'ofa_session';
+
+const sessionCookieOptions = {
+  httpOnly: true,
+  secure: isProduction,
+  sameSite: 'lax',
+  path: '/',
+  maxAge: SESSION_DURATION_MS,
+};
 
 const optionsSchema = z.object({
   displayName: z.string().trim().min(2).max(60),
@@ -15,6 +38,11 @@ const optionsSchema = z.object({
 
 const verifySchema = z.object({
   userId: z.string().uuid(),
+  challengeId: z.string().uuid(),
+  response: z.record(z.string(), z.unknown()),
+});
+
+const loginVerifySchema = z.object({
   challengeId: z.string().uuid(),
   response: z.record(z.string(), z.unknown()),
 });
@@ -34,6 +62,10 @@ async function deletePendingUser(userId) {
   }
 }
 
+// --------------------------------------------------
+// REGISTRATION
+// --------------------------------------------------
+
 async function registerOptions(req, res) {
   const parsed = optionsSchema.safeParse(req.body);
 
@@ -48,7 +80,6 @@ async function registerOptions(req, res) {
   const displayName = parsed.data.displayName;
 
   try {
-    // Create a pending Unwind OFA identity.
     const { error: userError } = await supabase
       .from('ofa_users')
       .insert({
@@ -68,13 +99,14 @@ async function registerOptions(req, res) {
       });
     }
 
-    // Generate passkey registration options.
     const options = await generateRegistrationOptions({
       rpName: webauthnConfig.rpName,
       rpID: webauthnConfig.rpID,
 
-      // Use an opaque UUID as the WebAuthn user handle.
-      userID: Buffer.from(userId.replace(/-/g, ''), 'hex'),
+      userID: Buffer.from(
+        userId.replace(/-/g, ''),
+        'hex'
+      ),
 
       userName: `ofa-${userId}`,
       userDisplayName: displayName,
@@ -82,8 +114,6 @@ async function registerOptions(req, res) {
       attestationType: 'none',
 
       authenticatorSelection: {
-        // Do not restrict users to platform authenticators.
-        // This allows compatible external security keys too.
         residentKey: 'required',
         userVerification: 'required',
       },
@@ -91,12 +121,10 @@ async function registerOptions(req, res) {
       timeout: 60000,
     });
 
-    // Registration challenges expire after five minutes.
     const expiresAt = new Date(
       Date.now() + 5 * 60 * 1000
     ).toISOString();
 
-    // Store the challenge before returning options.
     const {
       data: challengeRecord,
       error: challengeError,
@@ -163,7 +191,6 @@ async function registerVerify(req, res) {
   } = parsed.data;
 
   try {
-    // Retrieve the challenge belonging to this user.
     const {
       data: challengeRecord,
       error: challengeError,
@@ -183,7 +210,6 @@ async function registerVerify(req, res) {
       });
     }
 
-    // Reject incorrect, expired or previously consumed challenges.
     if (
       challengeRecord.ceremony !== 'registration' ||
       challengeRecord.consumed_at ||
@@ -195,7 +221,6 @@ async function registerVerify(req, res) {
       });
     }
 
-    // Confirm that the identity is still pending.
     const {
       data: user,
       error: userError,
@@ -219,7 +244,6 @@ async function registerVerify(req, res) {
       });
     }
 
-    // Cryptographically verify the authenticator response.
     let verification;
 
     try {
@@ -259,7 +283,6 @@ async function registerVerify(req, res) {
       aaguid,
     } = verification.registrationInfo;
 
-    // Validate the verified credential before storing it.
     if (
       !credential ||
       typeof credential.id !== 'string' ||
@@ -284,10 +307,6 @@ async function registerVerify(req, res) {
         )
       : [];
 
-    // Atomically:
-    // 1. Consume the registration challenge.
-    // 2. Activate the OFA identity.
-    // 3. Store the verified public credential.
     const {
       error: completionError,
     } = await supabase.rpc(
@@ -342,7 +361,341 @@ async function registerVerify(req, res) {
   }
 }
 
+// --------------------------------------------------
+// PASSKEY SIGN-IN
+// --------------------------------------------------
+
+async function loginOptions(_req, res) {
+  try {
+    // Generate discoverable passkey authentication options.
+    const options = await generateAuthenticationOptions({
+      rpID: webauthnConfig.rpID,
+      userVerification: 'required',
+      timeout: 60000,
+    });
+
+    const expiresAt = new Date(
+      Date.now() + 5 * 60 * 1000
+    ).toISOString();
+
+    // Store a user-independent authentication challenge.
+    const {
+      data: challengeRecord,
+      error: challengeError,
+    } = await supabase
+      .from('ofa_auth_challenges')
+      .insert({
+        challenge: options.challenge,
+        user_id: null,
+        ceremony: 'authentication',
+        expires_at: expiresAt,
+      })
+      .select('id')
+      .single();
+
+    if (challengeError || !challengeRecord) {
+      console.error(
+        'Authentication challenge creation failed:',
+        challengeError?.message
+      );
+
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to start passkey sign-in.',
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      challengeId: challengeRecord.id,
+      options,
+    });
+  } catch (error) {
+    console.error(
+      'Authentication options error:',
+      error.message
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to generate sign-in options.',
+    });
+  }
+}
+
+async function loginVerify(req, res) {
+  const parsed = loginVerifySchema.safeParse(req.body);
+
+  if (!parsed.success) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid passkey sign-in request.',
+    });
+  }
+
+  const {
+    challengeId,
+    response,
+  } = parsed.data;
+
+  try {
+    // Retrieve the authentication challenge.
+    const {
+      data: challengeRecord,
+      error: challengeError,
+    } = await supabase
+      .from('ofa_auth_challenges')
+      .select(
+        'id, challenge, ceremony, expires_at, consumed_at'
+      )
+      .eq('id', challengeId)
+      .maybeSingle();
+
+    if (challengeError || !challengeRecord) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid authentication challenge.',
+      });
+    }
+
+    if (
+      challengeRecord.ceremony !== 'authentication' ||
+      challengeRecord.consumed_at ||
+      new Date(challengeRecord.expires_at).getTime() <= Date.now()
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: 'Authentication challenge has expired or was already used.',
+      });
+    }
+
+    // Identify the credential returned by the browser.
+    const credentialId =
+      typeof response.id === 'string'
+        ? response.id
+        : typeof response.rawId === 'string'
+          ? response.rawId
+          : null;
+
+    if (!credentialId) {
+      return res.status(400).json({
+        success: false,
+        message: 'No passkey credential was provided.',
+      });
+    }
+
+    const {
+      data: storedCredential,
+      error: credentialError,
+    } = await supabase
+      .from('ofa_passkey_credentials')
+      .select(
+        'credential_id, user_id, public_key, counter, transports'
+      )
+      .eq('credential_id', credentialId)
+      .maybeSingle();
+
+    if (credentialError || !storedCredential) {
+      return res.status(401).json({
+        success: false,
+        message: 'This passkey is not recognized.',
+      });
+    }
+
+    // Load the identity linked to the credential.
+    const {
+      data: user,
+      error: userError,
+    } = await supabase
+      .from('ofa_users')
+      .select(
+        'id, display_name, registration_completed_at, disabled_at'
+      )
+      .eq('id', storedCredential.user_id)
+      .maybeSingle();
+
+    if (
+      userError ||
+      !user ||
+      !user.registration_completed_at ||
+      user.disabled_at
+    ) {
+      return res.status(401).json({
+        success: false,
+        message: 'This Unwind OFA account is unavailable.',
+      });
+    }
+
+    // Verify the discoverable credential's user handle.
+    const suppliedUserHandle = response.userHandle;
+
+    if (
+      typeof suppliedUserHandle !== 'string' ||
+      !suppliedUserHandle
+    ) {
+      return res.status(401).json({
+        success: false,
+        message: 'The passkey did not provide a valid account handle.',
+      });
+    }
+
+    let decodedUserHandle;
+
+    try {
+      decodedUserHandle = Buffer.from(
+        suppliedUserHandle,
+        'base64url'
+      );
+    } catch {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid passkey account handle.',
+      });
+    }
+
+    const expectedUserHandle = Buffer.from(
+      user.id.replace(/-/g, ''),
+      'hex'
+    );
+
+    if (!decodedUserHandle.equals(expectedUserHandle)) {
+      return res.status(401).json({
+        success: false,
+        message: 'Passkey account verification failed.',
+      });
+    }
+
+    // Verify the cryptographic authentication response.
+    let verification;
+
+    try {
+      verification = await verifyAuthenticationResponse({
+        response,
+        expectedChallenge: challengeRecord.challenge,
+        expectedOrigin: webauthnConfig.expectedOrigin,
+        expectedRPID: webauthnConfig.rpID,
+
+        credential: {
+          id: storedCredential.credential_id,
+          publicKey: Buffer.from(
+            storedCredential.public_key,
+            'base64url'
+          ),
+          counter: Number(storedCredential.counter),
+          transports: storedCredential.transports || [],
+        },
+
+        requireUserVerification: true,
+      });
+    } catch (verificationError) {
+      console.warn(
+        'Passkey authentication rejected:',
+        verificationError.message
+      );
+
+      return res.status(401).json({
+        success: false,
+        message: 'Passkey verification failed. Please try again.',
+      });
+    }
+
+    if (
+      !verification.verified ||
+      !verification.authenticationInfo ||
+      !verification.authenticationInfo.userVerified
+    ) {
+      return res.status(401).json({
+        success: false,
+        message: 'Passkey authentication was unsuccessful.',
+      });
+    }
+
+    const newCounter =
+      verification.authenticationInfo.newCounter;
+
+    if (
+      !Number.isSafeInteger(newCounter) ||
+      newCounter < 0
+    ) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid authenticator counter.',
+      });
+    }
+
+    // Generate a high-entropy opaque session token.
+    const sessionToken = randomBytes(32).toString('base64url');
+
+    // Only its SHA-256 hash is stored in the database.
+    const sessionTokenHash = createHash('sha256')
+      .update(sessionToken)
+      .digest('hex');
+
+    const sessionExpiresAt = new Date(
+      Date.now() + SESSION_DURATION_MS
+    ).toISOString();
+
+    // Atomically consume the challenge, update the counter,
+    // and create the session.
+    const {
+      data: sessionRecords,
+      error: sessionError,
+    } = await supabase.rpc(
+      'complete_ofa_login',
+      {
+        p_challenge_id: challengeId,
+        p_credential_id: storedCredential.credential_id,
+        p_new_counter: newCounter,
+        p_session_token_hash: sessionTokenHash,
+        p_expires_at: sessionExpiresAt,
+      }
+    );
+
+    if (sessionError || !sessionRecords?.length) {
+      console.error(
+        'Passkey session creation failed:',
+        sessionError?.message
+      );
+
+      return res.status(401).json({
+        success: false,
+        message: 'Unable to establish your sign-in session.',
+      });
+    }
+
+    const authenticatedUser = sessionRecords[0];
+
+    // The raw token is sent only as an HTTP-only cookie.
+    res.cookie(
+      SESSION_COOKIE_NAME,
+      sessionToken,
+      sessionCookieOptions
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: 'You have successfully signed in to Unwind OFA.',
+      user: {
+        id: authenticatedUser.user_id,
+        displayName: authenticatedUser.display_name,
+      },
+    });
+  } catch (error) {
+    console.error(
+      'Passkey authentication error:',
+      error.message
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: 'An unexpected sign-in error occurred.',
+    });
+  }
+}
+
 module.exports = {
   registerOptions,
   registerVerify,
+  loginOptions,
+  loginVerify,
 };

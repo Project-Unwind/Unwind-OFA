@@ -4,6 +4,8 @@ const rateLimit = require('express-rate-limit');
 const {
   registerOptions,
   registerVerify,
+  loginOptions,
+  loginVerify,
 } = require('../controllers/authController');
 
 const router = express.Router();
@@ -30,6 +32,29 @@ const registrationVerifyLimiter = rateLimit({
   },
 });
 
+const loginOptionsLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: 'Too many sign-in attempts. Please try again later.',
+  },
+});
+
+const loginVerifyLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: 'Too many verification attempts. Please try again later.',
+  },
+});
+
+// Registration
 router.post(
   '/register/options',
   registrationOptionsLimiter,
@@ -40,6 +65,19 @@ router.post(
   '/register/verify',
   registrationVerifyLimiter,
   registerVerify
+);
+
+// Passkey sign-in
+router.post(
+  '/login/options',
+  loginOptionsLimiter,
+  loginOptions
+);
+
+router.post(
+  '/login/verify',
+  loginVerifyLimiter,
+  loginVerify
 );
 
 module.exports = router;
