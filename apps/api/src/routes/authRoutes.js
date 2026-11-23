@@ -6,6 +6,8 @@ const {
   registerVerify,
   loginOptions,
   loginVerify,
+  getSession,
+  logout,
 } = require('../controllers/authController');
 
 const router = express.Router();
@@ -79,5 +81,10 @@ router.post(
   loginVerifyLimiter,
   loginVerify
 );
+
+// Session management
+router.get('/session', getSession);
+
+router.post('/logout', logout);
 
 module.exports = router;

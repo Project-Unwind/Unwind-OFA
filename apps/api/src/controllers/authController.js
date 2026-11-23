@@ -693,9 +693,223 @@ async function loginVerify(req, res) {
   }
 }
 
+function getSessionToken(req) {
+  const cookies = (req.headers.cookie || '').split(';');
+
+  const sessionCookie = cookies.find((cookie) =>
+    cookie.trim().startsWith(`${SESSION_COOKIE_NAME}=`)
+  );
+
+  if (!sessionCookie) {
+    return null;
+  }
+
+  const value = sessionCookie.trim().slice(
+    SESSION_COOKIE_NAME.length + 1
+  );
+
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return null;
+  }
+}
+
+function clearSessionCookie(res) {
+  res.clearCookie(SESSION_COOKIE_NAME, {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: 'lax',
+    path: '/',
+  });
+}
+
+// --------------------------------------------------
+// SESSION VALIDATION
+// --------------------------------------------------
+
+async function getSession(req, res) {
+  const sessionToken = getSessionToken(req);
+
+  if (!sessionToken) {
+    return res.status(200).json({
+      success: true,
+      authenticated: false,
+      user: null,
+    });
+  }
+
+  try {
+    const sessionTokenHash = createHash('sha256')
+      .update(sessionToken)
+      .digest('hex');
+
+    const {
+      data: session,
+      error: sessionError,
+    } = await supabase
+      .from('ofa_sessions')
+      .select('id, user_id, expires_at, revoked_at')
+      .eq('token_hash', sessionTokenHash)
+      .maybeSingle();
+
+    if (sessionError) {
+      console.error(
+        'Session lookup failed:',
+        sessionError.message
+      );
+
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to validate your session.',
+      });
+    }
+
+    if (
+      !session ||
+      session.revoked_at ||
+      new Date(session.expires_at).getTime() <= Date.now()
+    ) {
+      clearSessionCookie(res);
+
+      return res.status(200).json({
+        success: true,
+        authenticated: false,
+        user: null,
+      });
+    }
+
+    const {
+      data: user,
+      error: userError,
+    } = await supabase
+      .from('ofa_users')
+      .select(
+        'id, display_name, registration_completed_at, disabled_at'
+      )
+      .eq('id', session.user_id)
+      .maybeSingle();
+
+    if (userError) {
+      console.error(
+        'Session user lookup failed:',
+        userError.message
+      );
+
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to validate your account.',
+      });
+    }
+
+    if (
+      !user ||
+      !user.registration_completed_at ||
+      user.disabled_at
+    ) {
+      clearSessionCookie(res);
+
+      return res.status(200).json({
+        success: true,
+        authenticated: false,
+        user: null,
+      });
+    }
+
+    await supabase
+      .from('ofa_sessions')
+      .update({
+        last_used_at: new Date().toISOString(),
+      })
+      .eq('id', session.id)
+      .is('revoked_at', null);
+
+    return res.status(200).json({
+      success: true,
+      authenticated: true,
+      user: {
+        id: user.id,
+        displayName: user.display_name,
+      },
+    });
+  } catch (error) {
+    console.error(
+      'Session validation error:',
+      error.message
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: 'An unexpected session error occurred.',
+    });
+  }
+}
+
+// --------------------------------------------------
+// LOGOUT
+// --------------------------------------------------
+
+async function logout(req, res) {
+  const sessionToken = getSessionToken(req);
+
+  if (!sessionToken) {
+    clearSessionCookie(res);
+
+    return res.status(200).json({
+      success: true,
+      message: 'You are signed out.',
+    });
+  }
+
+  try {
+    const sessionTokenHash = createHash('sha256')
+      .update(sessionToken)
+      .digest('hex');
+
+    const { error: revokeError } = await supabase
+      .from('ofa_sessions')
+      .update({
+        revoked_at: new Date().toISOString(),
+      })
+      .eq('token_hash', sessionTokenHash)
+      .is('revoked_at', null);
+
+    if (revokeError) {
+      console.error(
+        'Session revocation failed:',
+        revokeError.message
+      );
+
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to sign out. Please try again.',
+      });
+    }
+
+    clearSessionCookie(res);
+
+    return res.status(200).json({
+      success: true,
+      message: 'You have successfully signed out.',
+    });
+  } catch (error) {
+    console.error(
+      'Logout error:',
+      error.message
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: 'An unexpected logout error occurred.',
+    });
+  }
+}
+
 module.exports = {
   registerOptions,
   registerVerify,
   loginOptions,
   loginVerify,
+  getSession,
+  logout,
 };
