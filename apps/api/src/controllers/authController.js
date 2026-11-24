@@ -744,8 +744,8 @@ async function loginVerify(req, res) {
       error: userError,
     } = await supabase
       .from('ofa_users')
-      .select(
-  'id, display_name, registration_completed_at, disabled_at, email_verified_at'
+  .select(
+  'id, display_name, email, registration_completed_at, disabled_at, email_verified_at'
 )
       .eq('id', storedCredential.user_id)
       .maybeSingle();
@@ -931,6 +931,62 @@ async function loginVerify(req, res) {
       sessionToken,
       sessionCookieOptions
     );
+
+    // Send a security notification after successful sign-in.
+    // Email delivery failure must never invalidate authentication.
+    try {
+      const loginTime = new Date().toUTCString();
+
+      await sendBrevoEmail({
+        toEmail: user.email,
+        toName: user.display_name,
+        subject: 'New sign-in to your Unwind OFA account',
+
+        htmlContent: `
+          <div style="font-family: Arial, sans-serif; max-width: 560px; margin: auto; color: #172321;">
+            <h2>New sign-in to Unwind OFA</h2>
+
+            <p>A successful passkey sign-in was completed for your account.</p>
+
+            <div style="padding: 16px; background: #f0f7f5; border-radius: 8px;">
+              <p style="margin: 0 0 8px;">
+                <strong>Sign-in method:</strong> Passkey
+              </p>
+
+              <p style="margin: 0;">
+                <strong>Date and time:</strong> ${loginTime} (UTC)
+              </p>
+            </div>
+
+            <p>
+              If you don't recognize this activity, take steps to secure
+              your account and contact Unwind OFA support.
+            </p>
+
+            <p>— Unwind OFA Security Team</p>
+          </div>
+        `,
+
+        textContent: `
+New sign-in to Unwind OFA
+
+A successful passkey sign-in was completed for your account.
+
+Sign-in method: Passkey
+Date and time: ${loginTime} (UTC)
+
+If you don't recognize this activity, take steps to secure your
+account and contact Unwind OFA support.
+
+— Unwind OFA Security Team
+        `,
+      });
+    } catch (emailError) {
+      console.error(
+        'Login security notification failed:',
+        emailError.message
+      );
+    }
 
     return res.status(200).json({
       success: true,
