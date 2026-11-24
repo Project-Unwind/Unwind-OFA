@@ -59,6 +59,19 @@ const emailVerificationSchema = z.object({
   token: z.string().min(32).max(256),
 });
 
+const emergencyLockSchema = z.object({
+  token: z.string().min(40).max(100),
+});
+
+const recoveryStartSchema = z.object({
+  email: z.string().trim().email().max(254)
+    .transform((value) => value.toLowerCase()),
+});
+
+const recoveryEmailVerifySchema = z.object({
+  token: z.string().min(32).max(256),
+});
+
 async function deletePendingUser(userId) {
   try {
     await supabase
@@ -414,41 +427,42 @@ try {
     toName: user.display_name,
     subject: 'Verify your Unwind OFA email address',
 
-    htmlContent: `
-      <div style="font-family: Arial, sans-serif; max-width: 560px; margin: auto; color: #172321;">
-        <h2>Welcome to Unwind OFA</h2>
+ htmlContent: `
+  <div style="font-family: Arial, sans-serif; max-width: 560px; margin: auto; color: #172321;">
+    <h2>Verify your Unwind OFA email address</h2>
 
-        <p>Your passkey has been successfully registered.</p>
+    <p>Hello ${user.display_name},</p>
 
-        <p>Please verify your email address by clicking below:</p>
+    <p>Your passkey has been registered successfully.</p>
 
-        <a
-          href="${verificationUrl}"
-          style="display: inline-block; padding: 13px 22px; background: #16F5D0; color: #020606; text-decoration: none; border-radius: 8px; font-weight: bold;"
-        >
-          Verify email address
-        </a>
+    <p>Click the button below to verify your email address:</p>
 
-        <p>This link expires in 30 minutes.</p>
+    <a href="${verificationUrl}"
+       style="display:inline-block;padding:12px 20px;background:#087f70;color:white;text-decoration:none;border-radius:6px;font-weight:bold;">
+      Verify email address
+    </a>
 
-        <p>If you did not create this account, you can ignore this email.</p>
+    <p>This link expires in 30 minutes and can only be used once.</p>
 
-        <p>— Unwind OFA Security Team</p>
-      </div>
-    `,
+    <p>— Unwind OFA Security Team</p>
+  </div>
+`,
 
-    textContent: `
-Welcome to Unwind OFA.
+textContent: `
+Verify your Unwind OFA email address
+
+Hello ${user.display_name},
 
 Your passkey has been registered successfully.
 
 Verify your email address using this link:
+
 ${verificationUrl}
 
-This link expires in 30 minutes.
+This link expires in 30 minutes and can only be used once.
 
-If you did not create this account, ignore this email.
-    `,
+— Unwind OFA Security Team
+`,
   });
 } catch (emailError) {
   // Do not undo successful passkey registration.
@@ -744,23 +758,24 @@ async function loginVerify(req, res) {
       error: userError,
     } = await supabase
       .from('ofa_users')
-  .select(
-  'id, display_name, email, registration_completed_at, disabled_at, email_verified_at'
+ .select(
+  'id, display_name, email, registration_completed_at, disabled_at, email_verified_at, emergency_locked_at'
 )
       .eq('id', storedCredential.user_id)
       .maybeSingle();
 
     if (
-      userError ||
-      !user ||
-      !user.registration_completed_at ||
-      user.disabled_at
-    ) {
-      return res.status(401).json({
-        success: false,
-        message: 'This Unwind OFA account is unavailable.',
-      });
-    }
+  userError ||
+  !user ||
+  !user.registration_completed_at ||
+  user.disabled_at ||
+  user.emergency_locked_at
+) {
+  return res.status(401).json({
+    success: false,
+    message: 'This Unwind OFA account is unavailable.',
+  });
+}
 
     if (!user.email_verified_at) {
   return res.status(403).json({
@@ -932,6 +947,47 @@ async function loginVerify(req, res) {
       sessionCookieOptions
     );
 
+    // Generate a one-time emergency lockdown token.
+let emergencyLockUrl = null;
+
+try {
+  const emergencyToken = randomBytes(32).toString('base64url');
+
+  const emergencyTokenHash = createHash('sha256')
+    .update(emergencyToken)
+    .digest('hex');
+
+  const emergencyTokenExpiresAt = new Date(
+    Date.now() + 15 * 60 * 1000
+  ).toISOString();
+
+  const { error: emergencyTokenError } = await supabase
+    .from('ofa_emergency_tokens')
+    .insert({
+      user_id: user.id,
+      token_hash: emergencyTokenHash,
+      expires_at: emergencyTokenExpiresAt,
+    });
+
+  if (emergencyTokenError) {
+    throw emergencyTokenError;
+  }
+
+  const frontendUrl = new URL(
+    '/emergency-lock',
+    process.env.FRONTEND_URL
+  );
+
+  frontendUrl.searchParams.set('token', emergencyToken);
+
+  emergencyLockUrl = frontendUrl.toString();
+} catch (tokenError) {
+  console.error(
+    'Emergency token generation failed:',
+    tokenError.message
+  );
+}
+
     // Send a security notification after successful sign-in.
     // Email delivery failure must never invalidate authentication.
     try {
@@ -943,31 +999,41 @@ async function loginVerify(req, res) {
         subject: 'New sign-in to your Unwind OFA account',
 
         htmlContent: `
-          <div style="font-family: Arial, sans-serif; max-width: 560px; margin: auto; color: #172321;">
-            <h2>New sign-in to Unwind OFA</h2>
+  <div style="font-family: Arial, sans-serif; max-width: 560px; margin: auto; color: #172321;">
+    <h2>New sign-in to Unwind OFA</h2>
 
-            <p>A successful passkey sign-in was completed for your account.</p>
+    <p>A successful passkey sign-in was completed for your account.</p>
 
-            <div style="padding: 16px; background: #f0f7f5; border-radius: 8px;">
-              <p style="margin: 0 0 8px;">
-                <strong>Sign-in method:</strong> Passkey
-              </p>
+    <div style="padding: 16px; background: #f0f7f5; border-radius: 8px;">
+      <p><strong>Sign-in method:</strong> Passkey</p>
+      <p><strong>Date and time:</strong> ${loginTime} (UTC)</p>
+    </div>
 
-              <p style="margin: 0;">
-                <strong>Date and time:</strong> ${loginTime} (UTC)
-              </p>
-            </div>
+    <div style="margin-top: 24px; padding: 20px; background: #fff3f0; border-radius: 8px;">
+      <h3 style="color: #9b2c20;">Wasn't you?</h3>
 
-            <p>
-              If you don't recognize this activity, take steps to secure
-              your account and contact Unwind OFA support.
-            </p>
+      <p>If you did not initiate this sign-in, immediately lock your account and revoke all active sessions.</p>
 
-            <p>— Unwind OFA Security Team</p>
-          </div>
-        `,
+      ${
+        emergencyLockUrl
+          ? `<a href="${emergencyLockUrl}"
+              style="display:inline-block;padding:12px 20px;background:#b42318;color:white;text-decoration:none;border-radius:6px;font-weight:bold;">
+              Secure my account
+            </a>`
+          : '<p>Emergency protection is temporarily unavailable. Please contact Unwind OFA support.</p>'
+      }
 
-        textContent: `
+      <p style="font-size:13px;color:#666;">
+        This link expires in 15 minutes and can only be used once.
+      </p>
+    </div>
+
+    <p>If you recognize this sign-in, no action is necessary.</p>
+    <p>— Unwind OFA Security Team</p>
+  </div>
+`,
+
+textContent: `
 New sign-in to Unwind OFA
 
 A successful passkey sign-in was completed for your account.
@@ -975,11 +1041,16 @@ A successful passkey sign-in was completed for your account.
 Sign-in method: Passkey
 Date and time: ${loginTime} (UTC)
 
-If you don't recognize this activity, take steps to secure your
-account and contact Unwind OFA support.
+If you did not initiate this sign-in, secure your account here:
+
+${emergencyLockUrl || 'Emergency protection is temporarily unavailable.'}
+
+This link expires in 15 minutes and can only be used once.
+
+If you recognize this sign-in, no action is necessary.
 
 — Unwind OFA Security Team
-        `,
+`,
       });
     } catch (emailError) {
       console.error(
@@ -1101,8 +1172,8 @@ async function getSession(req, res) {
     } = await supabase
       .from('ofa_users')
       .select(
-        'id, display_name, registration_completed_at, disabled_at, email_verified_at'
-      )
+  'id, display_name, registration_completed_at, disabled_at, email_verified_at, emergency_locked_at'
+)
       .eq('id', session.user_id)
       .maybeSingle();
 
@@ -1119,11 +1190,12 @@ async function getSession(req, res) {
     }
 
     if (
-      !user ||
-      !user.registration_completed_at ||
-      user.disabled_at ||
-      !user.email_verified_at
-    ) {
+  !user ||
+  !user.registration_completed_at ||
+  user.disabled_at ||
+  user.emergency_locked_at ||
+  !user.email_verified_at
+) {
       // Revoke sessions belonging to invalid or unverified accounts.
       await supabase
         .from('ofa_sessions')
@@ -1231,12 +1303,275 @@ async function logout(req, res) {
   }
 }
 
+async function emergencyLock(req, res) {
+  const parsed = emergencyLockSchema.safeParse(req.body);
+
+  if (!parsed.success) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid emergency security request.',
+    });
+  }
+
+  try {
+    const tokenHash = createHash('sha256')
+      .update(parsed.data.token)
+      .digest('hex');
+
+    const { data, error } = await supabase.rpc(
+      'complete_ofa_emergency_lock',
+      {
+        p_token_hash: tokenHash,
+      }
+    );
+
+    if (error || !data?.length) {
+      console.error(
+        'Emergency account lockdown failed:',
+        error?.message
+      );
+
+      return res.status(400).json({
+        success: false,
+        message: 'This emergency link is invalid, expired, or already used.',
+      });
+    }
+
+    // Clear the current browser session if the same browser
+    // initiated the emergency action.
+    clearSessionCookie(res);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Your account has been locked and all active sessions have been revoked.',
+    });
+  } catch (error) {
+    console.error(
+      'Emergency lockdown error:',
+      error.message
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to secure your account. Please try again.',
+    });
+  }
+}
+
+// --------------------------------------------------
+// ACCOUNT RECOVERY — EMAIL VERIFICATION
+// --------------------------------------------------
+
+async function startRecovery(req, res) {
+  const parsed = recoveryStartSchema.safeParse(req.body);
+
+  if (!parsed.success) {
+    return res.status(400).json({
+      success: false,
+      message: 'Please provide a valid email address.',
+    });
+  }
+
+  try {
+    const emailToken = randomBytes(32).toString('hex');
+
+    const emailTokenHash = createHash('sha256')
+      .update(emailToken)
+      .digest('hex');
+
+    const emailTokenExpiresAt = new Date(
+      Date.now() + 30 * 60 * 1000
+    ).toISOString();
+
+    const { data, error } = await supabase.rpc(
+      'start_ofa_recovery',
+      {
+        p_email: parsed.data.email,
+        p_email_token_hash: emailTokenHash,
+        p_email_token_expires_at: emailTokenExpiresAt,
+      }
+    );
+
+    if (error) {
+      console.error(
+        'Recovery initiation failed:',
+        error.message
+      );
+
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to process your recovery request.',
+      });
+    }
+
+    // Always return the same public response when no eligible
+    // account exists. Never reveal account eligibility.
+    if (data?.length) {
+      const recoveryUser = data[0];
+
+      try {
+        const frontendUrl = process.env.FRONTEND_URL;
+
+        if (!frontendUrl) {
+          throw new Error('FRONTEND_URL is not configured.');
+        }
+
+        const recoveryUrl = new URL(
+          '/recover-account',
+          frontendUrl
+        );
+
+        recoveryUrl.searchParams.set('token', emailToken);
+
+        await sendBrevoEmail({
+          toEmail: recoveryUser.email,
+          toName: recoveryUser.display_name,
+          subject: 'Unwind OFA account recovery',
+
+          htmlContent: `
+            <div style="font-family: Arial, sans-serif; max-width: 560px; margin: auto; color: #172321;">
+              <h2>Account recovery requested</h2>
+
+              <p>A recovery request was made for your Unwind OFA account.</p>
+
+              <p>To continue, verify your email address using the button below.</p>
+
+              <a href="${recoveryUrl.toString()}"
+                 style="display:inline-block;padding:12px 20px;background:#087f70;color:white;text-decoration:none;border-radius:6px;font-weight:bold;">
+                Verify email and continue
+              </a>
+
+              <p>This link expires in 30 minutes and can only be used once.</p>
+
+              <p>If you did not request account recovery, you can ignore this email.</p>
+
+              <p>— Unwind OFA Security Team</p>
+            </div>
+          `,
+
+          textContent: `
+Unwind OFA account recovery
+
+A recovery request was made for your account.
+
+Verify your email and continue:
+
+${recoveryUrl.toString()}
+
+This link expires in 30 minutes and can only be used once.
+
+If you did not request account recovery, ignore this email.
+
+— Unwind OFA Security Team
+          `,
+        });
+      } catch (emailError) {
+        console.error(
+          'Recovery email delivery failed:',
+          emailError.message
+        );
+
+        // Do not reveal account existence through email errors.
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'If an eligible account exists for that email address, a recovery link will be sent.',
+    });
+  } catch (error) {
+    console.error(
+      'Recovery initiation error:',
+      error.message
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to process your recovery request.',
+    });
+  }
+}
+
+async function verifyRecoveryEmail(req, res) {
+  const parsed = recoveryEmailVerifySchema.safeParse(req.body);
+
+  if (!parsed.success) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid recovery verification request.',
+    });
+  }
+
+  try {
+    const emailTokenHash = createHash('sha256')
+      .update(parsed.data.token)
+      .digest('hex');
+
+    const attemptToken = randomBytes(32).toString('base64url');
+
+    const attemptTokenHash = createHash('sha256')
+      .update(attemptToken)
+      .digest('hex');
+
+    const attemptExpiresAt = new Date(
+      Date.now() + 15 * 60 * 1000
+    ).toISOString();
+
+    const { data, error } = await supabase.rpc(
+      'verify_ofa_recovery_email',
+      {
+        p_email_token_hash: emailTokenHash,
+        p_attempt_token_hash: attemptTokenHash,
+        p_attempt_expires_at: attemptExpiresAt,
+      }
+    );
+
+    if (error) {
+      console.error(
+        'Recovery email verification failed:',
+        error.message
+      );
+
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to verify your recovery link.',
+      });
+    }
+
+    if (!data?.length) {
+      return res.status(400).json({
+        success: false,
+        message: 'This recovery link is invalid, expired, or already used.',
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Email verification successful. Continue with your existing passkey.',
+      recoveryToken: attemptToken,
+    });
+  } catch (error) {
+    console.error(
+      'Recovery email verification error:',
+      error.message
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: 'An unexpected recovery verification error occurred.',
+    });
+  }
+}
+
 module.exports = {
   registerOptions,
   registerVerify,
   verifyEmail,
   loginOptions,
   loginVerify,
+  emergencyLock,
   getSession,
   logout,
+  startRecovery,
+  verifyRecoveryEmail,
 };

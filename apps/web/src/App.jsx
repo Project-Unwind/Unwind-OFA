@@ -10,6 +10,7 @@ import VerifyEmailPage from './pages/VerifyEmailPage';
 import DashboardPage from './pages/DashboardPage';
 import ProtectedRoute from './components/ProtectedRoute';
 import NotFoundPage from './pages/NotFoundPage';
+import EmergencyLockPage from './pages/EmergencyLockPage';
 
 function App() {
   return (
@@ -26,6 +27,11 @@ function App() {
             path="/verify-email"
             element={<VerifyEmailPage />}
           />
+
+          <Route
+  path="/emergency-lock"
+  element={<EmergencyLockPage />}
+/>
 
           <Route element={<ProtectedRoute />}>
             <Route path="/dashboard" element={<DashboardPage />} />

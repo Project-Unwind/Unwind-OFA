@@ -1,0 +1,175 @@
+.emergency-lock-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 20px;
+  background: #020606;
+  color: #eafffb;
+  font-family: 'DM Sans', sans-serif;
+}
+
+.emergency-lock-card {
+  width: 100%;
+  max-width: 470px;
+  padding: 34px;
+  border: 1px solid rgba(183, 255, 242, 0.12);
+  border-radius: 20px;
+  background: #071010;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+}
+
+.emergency-lock-brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.4px;
+}
+
+.emergency-lock-brand-icon {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  color: #16f5d0;
+  background: rgba(22, 245, 208, 0.1);
+}
+
+.emergency-lock-content {
+  padding-top: 46px;
+}
+
+.emergency-lock-icon {
+  width: 62px;
+  height: 62px;
+  display: grid;
+  place-items: center;
+  border-radius: 17px;
+  margin-bottom: 27px;
+}
+
+.emergency-lock-icon.warning {
+  color: #ffbd72;
+  background: rgba(255, 189, 114, 0.1);
+}
+
+.emergency-lock-icon.success {
+  color: #16f5d0;
+  background: rgba(22, 245, 208, 0.1);
+}
+
+.emergency-lock-eyebrow {
+  margin: 0 0 12px;
+  color: #16f5d0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.7px;
+}
+
+.emergency-lock-content h1 {
+  margin: 0;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: clamp(29px, 7vw, 36px);
+  line-height: 1.15;
+  letter-spacing: -1.2px;
+}
+
+.emergency-lock-description {
+  margin: 16px 0 25px;
+  color: #a5bfba;
+  font-size: 14px;
+  line-height: 1.75;
+}
+
+.emergency-lock-warning {
+  padding: 19px;
+  border: 1px solid rgba(255, 189, 114, 0.18);
+  border-radius: 12px;
+  background: rgba(255, 189, 114, 0.045);
+  color: #e8e9df;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.emergency-lock-warning strong {
+  color: #ffca91;
+}
+
+.emergency-lock-warning ul {
+  margin: 10px 0 0;
+  padding-left: 19px;
+  color: #b6c6c0;
+}
+
+.emergency-lock-button {
+  width: 100%;
+  min-height: 49px;
+  margin-top: 22px;
+  border: 0;
+  border-radius: 10px;
+  background: #ffbd72;
+  color: #241506;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.emergency-lock-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  opacity: 0.92;
+}
+
+.emergency-lock-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.emergency-lock-message {
+  margin-top: 18px;
+  padding: 13px 15px;
+  border-radius: 9px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.emergency-lock-message.error {
+  border: 1px solid rgba(255, 112, 112, 0.2);
+  background: rgba(255, 112, 112, 0.07);
+  color: #ffaaaa;
+}
+
+.emergency-lock-footnote,
+.emergency-lock-note {
+  margin: 17px 0 0;
+  color: #849c96;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.emergency-lock-link {
+  display: inline-block;
+  margin-top: 27px;
+  color: #16f5d0;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.emergency-lock-link:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 480px) {
+  .emergency-lock-card {
+    padding: 25px 21px;
+  }
+
+  .emergency-lock-content {
+    padding-top: 37px;
+  }
+}

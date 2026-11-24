@@ -9,6 +9,9 @@ const {
   loginVerify,
   getSession,
   logout,
+  startRecovery,
+  verifyRecoveryEmail,
+  emergencyLock,
 } = require('../controllers/authController');
 
 const router = express.Router();
@@ -88,6 +91,20 @@ const loginVerifyLimiter = rateLimit({
   },
 });
 
+const emergencyLockLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+router.post(
+  '/emergency-lock',
+  requireTrustedOrigin,
+  emergencyLockLimiter,
+  emergencyLock
+);
+
 // Registration
 router.post(
   '/register/options',
@@ -118,5 +135,33 @@ router.post(
 router.get('/session', getSession);
 
 router.post('/logout', requireTrustedOrigin, logout);
+
+const recoveryStartLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const recoveryVerifyLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+router.post(
+  '/recovery/start',
+  requireTrustedOrigin,
+  recoveryStartLimiter,
+  startRecovery
+);
+
+router.post(
+  '/recovery/verify-email',
+  requireTrustedOrigin,
+  recoveryVerifyLimiter,
+  verifyRecoveryEmail
+);
 
 module.exports = router;
