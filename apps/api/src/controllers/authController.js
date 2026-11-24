@@ -16,6 +16,8 @@ const {
 const { supabase } = require('../config/supabase');
 const { webauthnConfig } = require('../config/webauthn');
 
+const { sendBrevoEmail } = require('../services/emailService');
+
 const SESSION_DURATION_MS = 7 * 24 * 60 * 60 * 1000;
 
 const isProduction = process.env.NODE_ENV === 'production';
@@ -34,6 +36,12 @@ const sessionCookieOptions = {
 
 const optionsSchema = z.object({
   displayName: z.string().trim().min(2).max(60),
+  email: z
+    .string()
+    .trim()
+    .email('Please provide a valid email address.')
+    .max(254)
+    .transform((value) => value.toLowerCase()),
 });
 
 const verifySchema = z.object({
@@ -45,6 +53,10 @@ const verifySchema = z.object({
 const loginVerifySchema = z.object({
   challengeId: z.string().uuid(),
   response: z.record(z.string(), z.unknown()),
+});
+
+const emailVerificationSchema = z.object({
+  token: z.string().min(32).max(256),
 });
 
 async function deletePendingUser(userId) {
@@ -77,27 +89,36 @@ async function registerOptions(req, res) {
   }
 
   const userId = randomUUID();
-  const displayName = parsed.data.displayName;
+const displayName = parsed.data.displayName;
+const email = parsed.data.email;
 
   try {
     const { error: userError } = await supabase
-      .from('ofa_users')
-      .insert({
-        id: userId,
-        display_name: displayName,
-      });
+  .from('ofa_users')
+  .insert({
+    id: userId,
+    display_name: displayName,
+    email,
+  });
 
-    if (userError) {
-      console.error(
-        'OFA user creation failed:',
-        userError.message
-      );
+   if (userError) {
+  if (userError.code === '23505') {
+    return res.status(409).json({
+      success: false,
+      message: 'An account with this email address already exists.',
+    });
+  }
 
-      return res.status(500).json({
-        success: false,
-        message: 'Unable to start registration.',
-      });
-    }
+  console.error(
+    'OFA user creation failed:',
+    userError.message
+  );
+
+  return res.status(500).json({
+    success: false,
+    message: 'Unable to start registration.',
+  });
+}
 
     const options = await generateRegistrationOptions({
       rpName: webauthnConfig.rpName,
@@ -228,8 +249,8 @@ async function registerVerify(req, res) {
     } = await supabase
       .from('ofa_users')
       .select(
-        'id, display_name, registration_completed_at, disabled_at'
-      )
+  'id, display_name, email, registration_completed_at, disabled_at'
+)
       .eq('id', userId)
       .maybeSingle();
 
@@ -341,6 +362,102 @@ async function registerVerify(req, res) {
       });
     }
 
+    // Generate a secure email verification token.
+const verificationToken = randomBytes(32).toString('hex');
+
+const verificationTokenHash = createHash('sha256')
+  .update(verificationToken)
+  .digest('hex');
+
+const verificationExpiresAt = new Date(
+  Date.now() + 30 * 60 * 1000
+).toISOString();
+
+// Store only the token hash.
+const { error: emailUpdateError } = await supabase
+  .from('ofa_users')
+  .update({
+    email_verification_token_hash: verificationTokenHash,
+    email_verification_expires_at: verificationExpiresAt,
+  })
+  .eq('id', userId);
+
+if (emailUpdateError) {
+  console.error(
+    'Email verification token storage failed:',
+    emailUpdateError.message
+  );
+
+  return res.status(200).json({
+    success: true,
+    message: 'Passkey registered, but email verification could not be prepared. Please contact support.',
+    user: {
+      id: userId,
+      displayName: user.display_name,
+    },
+  });
+}
+
+// Send the verification email.
+try {
+  const frontendUrl = process.env.FRONTEND_URL;
+
+  if (!frontendUrl) {
+    throw new Error('FRONTEND_URL is not configured.');
+  }
+
+  const verificationUrl =
+    `${frontendUrl.replace(/\/$/, '')}/verify-email?token=${verificationToken}`;
+
+  await sendBrevoEmail({
+    toEmail: user.email,
+    toName: user.display_name,
+    subject: 'Verify your Unwind OFA email address',
+
+    htmlContent: `
+      <div style="font-family: Arial, sans-serif; max-width: 560px; margin: auto; color: #172321;">
+        <h2>Welcome to Unwind OFA</h2>
+
+        <p>Your passkey has been successfully registered.</p>
+
+        <p>Please verify your email address by clicking below:</p>
+
+        <a
+          href="${verificationUrl}"
+          style="display: inline-block; padding: 13px 22px; background: #16F5D0; color: #020606; text-decoration: none; border-radius: 8px; font-weight: bold;"
+        >
+          Verify email address
+        </a>
+
+        <p>This link expires in 30 minutes.</p>
+
+        <p>If you did not create this account, you can ignore this email.</p>
+
+        <p>— Unwind OFA Security Team</p>
+      </div>
+    `,
+
+    textContent: `
+Welcome to Unwind OFA.
+
+Your passkey has been registered successfully.
+
+Verify your email address using this link:
+${verificationUrl}
+
+This link expires in 30 minutes.
+
+If you did not create this account, ignore this email.
+    `,
+  });
+} catch (emailError) {
+  // Do not undo successful passkey registration.
+  console.error(
+    'Registration verification email failed:',
+    emailError.message
+  );
+}
+
     return res.status(200).json({
       success: true,
       message: 'Your Unwind OFA passkey was registered successfully.',
@@ -358,6 +475,124 @@ async function registerVerify(req, res) {
     return res.status(500).json({
       success: false,
       message: 'An unexpected registration error occurred.',
+    });
+  }
+}
+
+async function verifyEmail(req, res) {
+  const parsed = emailVerificationSchema.safeParse(req.body);
+
+  if (!parsed.success) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid email verification request.',
+    });
+  }
+
+  try {
+    const tokenHash = createHash('sha256')
+      .update(parsed.data.token)
+      .digest('hex');
+
+    const now = new Date().toISOString();
+
+    const {
+      data: updatedUser,
+      error: updateError,
+    } = await supabase
+      .from('ofa_users')
+      .update({
+        email_verified_at: now,
+        email_verification_token_hash: null,
+        email_verification_expires_at: null,
+      })
+      .eq('email_verification_token_hash', tokenHash)
+      .gt('email_verification_expires_at', now)
+      .is('email_verified_at', null)
+      .select('id, display_name, email')
+      .maybeSingle();
+
+    if (updateError) {
+      console.error(
+        'Email verification update failed:',
+        updateError.message
+      );
+
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to verify your email address.',
+      });
+    }
+
+    if (!updatedUser) {
+      return res.status(400).json({
+        success: false,
+        message: 'This verification link is invalid, expired, or already used.',
+      });
+    }
+
+    // Send account-created confirmation.
+    // Verification remains successful even if email delivery fails.
+    try {
+      await sendBrevoEmail({
+        toEmail: updatedUser.email,
+        toName: updatedUser.display_name,
+        subject: 'Your Unwind OFA account is ready',
+
+        htmlContent: `
+          <div style="font-family: Arial, sans-serif; max-width: 560px; margin: auto; color: #172321;">
+            <h2>Welcome to Unwind OFA!</h2>
+
+            <p>Hello ${updatedUser.display_name},</p>
+
+            <p>Your email address has been successfully verified.</p>
+
+            <p>Your passkey registration is complete, and your Unwind OFA account is ready to use.</p>
+
+            <p>You can now sign in securely using your registered passkey.</p>
+
+            <p><strong>Security reminder:</strong> Never share your passkey or account recovery codes with anyone.</p>
+
+            <p>— Unwind OFA Security Team</p>
+          </div>
+        `,
+
+        textContent: `
+Welcome to Unwind OFA!
+
+Hello ${updatedUser.display_name},
+
+Your email address has been successfully verified.
+
+Your passkey registration is complete, and your Unwind OFA account is ready to use.
+
+You can now sign in securely using your registered passkey.
+
+Security reminder: Never share your passkey or account recovery codes with anyone.
+
+— Unwind OFA Security Team
+        `,
+      });
+    } catch (emailError) {
+      console.error(
+        'Account confirmation email failed:',
+        emailError.message
+      );
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Your email address has been verified successfully.',
+    });
+  } catch (error) {
+    console.error(
+      'Email verification error:',
+      error.message
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: 'An unexpected email verification error occurred.',
     });
   }
 }
@@ -510,8 +745,8 @@ async function loginVerify(req, res) {
     } = await supabase
       .from('ofa_users')
       .select(
-        'id, display_name, registration_completed_at, disabled_at'
-      )
+  'id, display_name, registration_completed_at, disabled_at, email_verified_at'
+)
       .eq('id', storedCredential.user_id)
       .maybeSingle();
 
@@ -527,6 +762,13 @@ async function loginVerify(req, res) {
       });
     }
 
+    if (!user.email_verified_at) {
+  return res.status(403).json({
+    success: false,
+    message: 'Please verify your email address before signing in.',
+    code: 'EMAIL_NOT_VERIFIED',
+  });
+}
     
     // Verify the discoverable credential's user handle
     // when the authenticator provides one.
@@ -803,7 +1045,7 @@ async function getSession(req, res) {
     } = await supabase
       .from('ofa_users')
       .select(
-        'id, display_name, registration_completed_at, disabled_at'
+        'id, display_name, registration_completed_at, disabled_at, email_verified_at'
       )
       .eq('id', session.user_id)
       .maybeSingle();
@@ -823,8 +1065,18 @@ async function getSession(req, res) {
     if (
       !user ||
       !user.registration_completed_at ||
-      user.disabled_at
+      user.disabled_at ||
+      !user.email_verified_at
     ) {
+      // Revoke sessions belonging to invalid or unverified accounts.
+      await supabase
+        .from('ofa_sessions')
+        .update({
+          revoked_at: new Date().toISOString(),
+        })
+        .eq('id', session.id)
+        .is('revoked_at', null);
+
       clearSessionCookie(res);
 
       return res.status(200).json({
@@ -926,6 +1178,7 @@ async function logout(req, res) {
 module.exports = {
   registerOptions,
   registerVerify,
+  verifyEmail,
   loginOptions,
   loginVerify,
   getSession,

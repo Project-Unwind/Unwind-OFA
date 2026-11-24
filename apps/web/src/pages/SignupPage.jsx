@@ -13,6 +13,7 @@ const API_BASE_URL =
 
 function SignupPage() {
   const [fullName, setFullName] = useState('');
+  const [email, setEmail] = useState('');
   const [step, setStep] = useState('details');
   const [loading, setLoading] = useState(false);
   const [registration, setRegistration] = useState(null);
@@ -36,6 +37,7 @@ function SignupPage() {
           },
           body: JSON.stringify({
             displayName: fullName.trim(),
+            email: email.trim().toLowerCase(),
           }),
         }
       );
@@ -79,12 +81,10 @@ function SignupPage() {
     setMessage('');
 
     try {
-      // Open the browser's native passkey registration prompt.
       const credential = await startRegistration({
         optionsJSON: registration.options,
       });
 
-      // Verify the authenticator response with the OFA backend.
       const response = await fetch(
         `${API_BASE_URL}/api/auth/register/verify`,
         {
@@ -187,10 +187,10 @@ function SignupPage() {
 
           <p>
             {step === 'details' &&
-              'Create your Unwind OFA identity using a passkey. No password or email verification required.'}
+              'Create your Unwind OFA identity using your name, email address and a passkey.'}
 
             {step === 'passkey' &&
-  'Register using your device’s built-in authentication. Your device may use fingerprint recognition, Face ID, Windows Hello, or another supported screen-lock verification method.'}
+              'Register using your device’s built-in authentication. Your device may use fingerprint recognition, Face ID, Windows Hello, or another supported screen-lock verification method.'}
 
             {step === 'complete' &&
               'Your Unwind OFA identity and passkey have been successfully registered.'}
@@ -202,7 +202,7 @@ function SignupPage() {
             className="signup-form"
             onSubmit={requestRegistrationOptions}
           >
-            <label htmlFor="signup-name">Full name</label>
+            <label htmlFor="signup-name">Name</label>
 
             <input
               id="signup-name"
@@ -214,6 +214,21 @@ function SignupPage() {
               value={fullName}
               onChange={(event) =>
                 setFullName(event.target.value)
+              }
+              required
+            />
+
+            <label htmlFor="signup-email">Email ID</label>
+
+            <input
+              id="signup-email"
+              type="email"
+              placeholder="you@example.com"
+              autoComplete="email"
+              maxLength={254}
+              value={email}
+              onChange={(event) =>
+                setEmail(event.target.value)
               }
               required
             />
@@ -247,11 +262,9 @@ function SignupPage() {
             <Fingerprint size={42} />
 
             <p>
-              <p>
-  Your device will securely verify your identity
-  using its supported fingerprint, facial recognition,
-  or screen-lock authentication.
-</p>
+              Your device will securely verify your identity
+              using its supported fingerprint, facial recognition,
+              or screen-lock authentication.
             </p>
 
             <button
@@ -288,14 +301,9 @@ function SignupPage() {
               by Unwind OFA.
             </p>
 
-            <p>
-              Sign-in and session creation will be available
-              in the next authentication milestone.
-            </p>
-
             <Link to="/login" className="signup-submit-button">
-  Sign in with your passkey
-</Link>
+              Sign in with your passkey
+            </Link>
           </div>
         )}
 
