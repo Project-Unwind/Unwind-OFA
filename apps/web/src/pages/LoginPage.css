@@ -318,3 +318,17 @@
   text-decoration: none;
   color: #02100e;
 }
+
+.auth-recovery-link {
+  display: inline-block;
+  margin-top: 18px;
+  color: #16f5d0;
+  font-size: 0.9rem;
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+.auth-recovery-link:hover {
+  color: #b7fff2;
+  text-decoration: underline;
+}

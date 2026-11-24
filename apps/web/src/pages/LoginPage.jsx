@@ -26,7 +26,6 @@ function LoginPage() {
     setMessage('');
 
     try {
-      // Request discoverable passkey authentication options.
       const optionsResponse = await fetch(
         `${API_BASE_URL}/api/auth/login/options`,
         {
@@ -47,12 +46,10 @@ function LoginPage() {
         );
       }
 
-      // Open the browser's native passkey prompt.
       const authenticationResponse = await startAuthentication({
         optionsJSON: optionsResult.options,
       });
 
-      // Verify the passkey with the OFA backend.
       const verifyResponse = await fetch(
         `${API_BASE_URL}/api/auth/login/verify`,
         {
@@ -77,7 +74,6 @@ function LoginPage() {
         );
       }
 
-      // Confirm that the server-issued session cookie works.
       const sessionResult = await refreshSession();
 
       if (!sessionResult.authenticated) {
@@ -135,11 +131,9 @@ function LoginPage() {
           </h1>
 
           <p>
-            <p>
-  Sign in using your device's built-in authentication.
-  Use fingerprint recognition, Face ID, Windows Hello,
-  or another supported passkey verification method.
-</p>
+            Sign in using your device's built-in authentication.
+            Use fingerprint recognition, Face ID, Windows Hello,
+            or another supported passkey verification method.
           </p>
         </div>
 
@@ -147,11 +141,9 @@ function LoginPage() {
           <Fingerprint size={42} />
 
           <p>
-            <p>
-  Authenticate securely with your device's fingerprint
-  sensor, facial recognition, or supported screen-lock
-  verification.
-</p>
+            Authenticate securely with your device's fingerprint
+            sensor, facial recognition, or supported screen-lock
+            verification.
           </p>
 
           <button
@@ -166,6 +158,13 @@ function LoginPage() {
 
             <Fingerprint size={18} />
           </button>
+
+          <Link
+            to="/recover-account"
+            className="auth-recovery-link"
+          >
+            Forgot access? Recover your account
+          </Link>
         </div>
 
         {error && (
