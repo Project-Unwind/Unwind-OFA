@@ -254,3 +254,95 @@
     font-size: 24px;
   }
 }
+
+.recover-code-divider {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 22px 0;
+  color: #8a9b98;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 1.5px;
+}
+
+.recover-code-divider::before,
+.recover-code-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: rgba(183, 255, 242, 0.14);
+}
+
+.recover-save-confirmation {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  margin-top: 20px;
+  padding: 22px;
+  text-align: center;
+  background: #071010;
+  border: 1px solid rgba(22, 245, 208, 0.25);
+  border-radius: 14px;
+}
+
+.recover-save-confirmation > svg {
+  color: #16F5D0;
+}
+
+.recover-save-confirmation h3 {
+  margin: 0;
+  color: #B7FFF2;
+}
+
+.recover-save-confirmation p {
+  margin: 0;
+  color: #a0b5b2;
+  line-height: 1.6;
+}
+
+.recover-confirmation-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  margin-top: 8px;
+}
+
+.recover-not-saved-button,
+.recover-confirm-continue {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  min-height: 46px;
+  padding: 12px 16px;
+  border-radius: 9px;
+  font: inherit;
+  font-weight: 600;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.recover-not-saved-button {
+  color: #B7FFF2;
+  background: #101818;
+  border: 1px solid #29413e;
+}
+
+.recover-confirm-continue {
+  color: #020606;
+  background: #16F5D0;
+  border: 1px solid #16F5D0;
+}
+
+.recover-not-saved-button:hover {
+  border-color: #16F5D0;
+}
+
+.recover-confirm-continue:hover {
+  background: #B7FFF2;
+}

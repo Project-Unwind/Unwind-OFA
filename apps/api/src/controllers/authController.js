@@ -72,6 +72,18 @@ const recoveryEmailVerifySchema = z.object({
   token: z.string().min(32).max(256),
 });
 
+const recoveryCodeVerifySchema = z.object({
+  recoveryToken: z.string().min(40).max(100),
+  recoveryCode: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .regex(
+      /^[A-F0-9]{4}(?:-[A-F0-9]{4}){7}$/,
+      'Invalid recovery code format.'
+    ),
+});
+
 const recoveryAuthenticationOptionsSchema = z.object({
   recoveryToken: z.string().min(40).max(100),
 });
@@ -1587,6 +1599,64 @@ async function verifyRecoveryEmail(req, res) {
   }
 }
 
+async function verifyRecoveryCode(req, res) {
+  const parsed = recoveryCodeVerifySchema.safeParse(req.body);
+
+  if (!parsed.success) {
+    return res.status(400).json({
+      success: false,
+      message: 'Please provide a valid recovery code.',
+    });
+  }
+
+  try {
+    const attemptTokenHash = createHash('sha256')
+      .update(parsed.data.recoveryToken)
+      .digest('hex');
+
+    const recoveryCodeHash = createHash('sha256')
+      .update(parsed.data.recoveryCode)
+      .digest('hex');
+
+    const { data, error } = await supabase.rpc(
+      'verify_ofa_recovery_code',
+      {
+        p_attempt_token_hash: attemptTokenHash,
+        p_recovery_code_hash: recoveryCodeHash,
+      }
+    );
+
+    if (error || !data?.length) {
+      if (error) {
+        console.error(
+          'Recovery code verification failed:',
+          error.message
+        );
+      }
+
+      return res.status(400).json({
+        success: false,
+        message: 'The recovery code is invalid, already used, or the recovery session has expired.',
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Recovery code verified successfully.',
+    });
+  } catch (error) {
+    console.error(
+      'Recovery code verification error:',
+      error.message
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: 'An unexpected recovery code verification error occurred.',
+    });
+  }
+}
+
 async function recoveryAuthenticationOptions(req, res) {
   const parsed = recoveryAuthenticationOptionsSchema.safeParse(
     req.body
@@ -2028,7 +2098,9 @@ async function recoveryRegistrationOptions(req, res) {
       .select('id, user_id, recovery_credential_id')
       .eq('attempt_token_hash', attemptTokenHash)
       .not('email_verified_at', 'is', null)
-      .not('passkey_verified_at', 'is', null)
+      .or(
+  'passkey_verified_at.not.is.null,recovery_code_verified_at.not.is.null'
+)
       .is('consumed_at', null)
       .is('recovery_credential_id', null)
       .gt('expires_at', now)
@@ -2060,19 +2132,6 @@ async function recoveryRegistrationOptions(req, res) {
       return res.status(400).json({
         success: false,
         message: 'This account cannot be recovered.',
-      });
-    }
-
-    const { data: existingCredentials, error: credentialsError } =
-      await supabase
-        .from('ofa_passkey_credentials')
-        .select('credential_id, transports')
-        .eq('user_id', user.id);
-
-    if (credentialsError) {
-      return res.status(500).json({
-        success: false,
-        message: 'Unable to retrieve existing passkeys.',
       });
     }
 
@@ -2177,7 +2236,9 @@ async function verifyRecoveryRegistration(req, res) {
       .select('id, user_id, recovery_credential_id')
       .eq('attempt_token_hash', attemptTokenHash)
       .not('email_verified_at', 'is', null)
-      .not('passkey_verified_at', 'is', null)
+      .or(
+  'passkey_verified_at.not.is.null,recovery_code_verified_at.not.is.null'
+)
       .is('consumed_at', null)
       .is('recovery_credential_id', null)
       .gt('expires_at', now)
@@ -2436,6 +2497,7 @@ module.exports = {
   logout,
   startRecovery,
   verifyRecoveryEmail,
+  verifyRecoveryCode,
   recoveryAuthenticationOptions,
   verifyRecoveryPasskey,
   recoveryRegistrationOptions,

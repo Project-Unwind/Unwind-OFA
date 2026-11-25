@@ -11,6 +11,7 @@ const {
   logout,
   startRecovery,
   verifyRecoveryEmail,
+  verifyRecoveryCode,
   emergencyLock,
   recoveryAuthenticationOptions,
   verifyRecoveryPasskey,
@@ -155,6 +156,13 @@ const recoveryVerifyLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+const recoveryCodeVerifyLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 const recoveryAuthenticationOptionsLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
@@ -216,6 +224,13 @@ router.post(
   requireTrustedOrigin,
   recoveryVerifyLimiter,
   verifyRecoveryEmail
+);
+
+router.post(
+  '/recovery/code/verify',
+  requireTrustedOrigin,
+  recoveryCodeVerifyLimiter,
+  verifyRecoveryCode
 );
 
 router.post(

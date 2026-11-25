@@ -34,6 +34,11 @@ function RecoverAccountPage() {
   const [passkeyVerified, setPasskeyVerified] = useState(false);
   const [passkeyMessage, setPasskeyMessage] = useState('');
 
+  const [recoveryCode, setRecoveryCode] = useState('');
+  const [recoveryCodeLoading, setRecoveryCodeLoading] = useState(false);
+  const [recoveryCodeVerified, setRecoveryCodeVerified] = useState(false);
+  const [recoveryCodeMessage, setRecoveryCodeMessage] = useState('');
+
   const [replacementLoading, setReplacementLoading] = useState(false);
   const [replacementRegistered, setReplacementRegistered] = useState(false);
   const [replacementMessage, setReplacementMessage] = useState('');
@@ -267,13 +272,77 @@ function RecoverAccountPage() {
   };
 
   // --------------------------------------------------
+// VERIFY RECOVERY CODE
+// --------------------------------------------------
+
+const verifyRecoveryCode = async (event) => {
+  event.preventDefault();
+
+  if (
+    !recoveryToken ||
+    recoveryCodeLoading ||
+    recoveryCodeVerified
+  ) {
+    return;
+  }
+
+  const normalizedCode = recoveryCode.trim().toUpperCase();
+
+  if (!/^[A-F0-9]{4}(?:-[A-F0-9]{4}){7}$/.test(normalizedCode)) {
+    setRecoveryCodeMessage(
+      'Enter a valid recovery code in the format XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX.'
+    );
+    return;
+  }
+
+  setRecoveryCodeLoading(true);
+  setRecoveryCodeMessage('Verifying your recovery code...');
+
+  try {
+    const response = await fetch(
+      '/api/auth/recovery/code/verify',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          recoveryToken,
+          recoveryCode: normalizedCode,
+        }),
+      }
+    );
+
+    const result = await response.json();
+
+    if (!response.ok || !result.success) {
+      throw new Error(
+        result.message || 'Recovery code verification failed.'
+      );
+    }
+
+    setRecoveryCodeVerified(true);
+    setRecoveryCode('');
+    setRecoveryCodeMessage(
+      'Your recovery code has been verified successfully.'
+    );
+  } catch (error) {
+    setRecoveryCodeMessage(
+      error.message || 'Unable to verify your recovery code.'
+    );
+  } finally {
+    setRecoveryCodeLoading(false);
+  }
+};
+
+  // --------------------------------------------------
   // REGISTER REPLACEMENT PASSKEY
   // --------------------------------------------------
 
   const registerReplacementPasskey = async () => {
     if (
       !recoveryToken ||
-      !passkeyVerified ||
+      !(passkeyVerified || recoveryCodeVerified) ||
       replacementLoading ||
       replacementRegistered
     ) {
@@ -535,8 +604,10 @@ function RecoverAccountPage() {
                 : replacementRegistered
                   ? 'Replacement passkey registered'
                   : passkeyVerified
-                    ? 'Passkey verified'
-                    : 'Verify your passkey'
+  ? 'Passkey verified'
+  : recoveryCodeVerified
+    ? 'Recovery code verified'
+    : 'Verify your identity'
             )}
 
             {status === 'error' &&
@@ -670,45 +741,64 @@ function RecoverAccountPage() {
                 </p>
 
                 <button
-                  type="button"
-                  className="recover-submit-button"
-                  onClick={() => setCodesSaved(true)}
-                  disabled={codesSaved}
-                >
-                  {codesSaved
-                    ? 'Recovery codes saved'
-                    : 'I have saved my recovery codes'}
-                </button>
+  type="button"
+  className="recover-submit-button"
+  onClick={() => setCodesSaved(true)}
+>
+  I have saved my recovery codes
+</button>
 
-                {codesSaved && (
-                  <Link
-                    to="/login"
-                    className="recover-secondary-link"
-                  >
-                    Continue to sign in
-                  </Link>
-                )}
+{codesSaved && (
+  <div className="recover-save-confirmation">
+    <ShieldCheck size={25} />
+
+    <h3>Confirm your recovery codes</h3>
+
+    <p>
+      Have you securely saved all ten recovery codes?
+      You will not be able to view these codes again
+      after leaving this page.
+    </p>
+
+    <div className="recover-confirmation-actions">
+      <button
+        type="button"
+        className="recover-not-saved-button"
+        onClick={() => setCodesSaved(false)}
+      >
+        Not saved
+      </button>
+
+      <Link
+        to="/login"
+        className="recover-confirm-continue"
+      >
+        Saved, continue to Login Page
+      </Link>
+    </div>
+  </div>
+)}
               </>
-            ) : !passkeyVerified ? (
+                        ) : !(passkeyVerified || recoveryCodeVerified) ? (
 
-              /* STEP 1: VERIFY EXISTING PASSKEY */
+              /* STEP 1: VERIFY EXISTING PASSKEY OR RECOVERY CODE */
 
               <>
                 <p>
-                  Email verification is complete. Verify
-                  ownership using a passkey already registered
-                  to this account.
+                  Your email has been verified. Prove ownership
+                  of your account using either an existing
+                  passkey or one of your unused recovery codes.
                 </p>
 
                 <button
                   type="button"
                   className="recover-submit-button"
                   onClick={verifyExistingPasskey}
-                  disabled={passkeyLoading}
+                  disabled={passkeyLoading || recoveryCodeLoading}
                 >
                   {passkeyLoading
                     ? 'Verifying passkey...'
-                    : 'Verify existing passkey'}
+                    : 'Verify using existing passkey'}
 
                   {passkeyLoading ? (
                     <LoaderCircle size={18} />
@@ -719,6 +809,80 @@ function RecoverAccountPage() {
 
                 {passkeyMessage && (
                   <span>{passkeyMessage}</span>
+                )}
+
+                <div className="recover-code-divider">
+                  <span>OR</span>
+                </div>
+
+                <form
+                  className="recover-form"
+                  onSubmit={verifyRecoveryCode}
+                >
+                  <label htmlFor="recovery-code">
+                    Recovery code
+                  </label>
+
+                  <input
+  id="recovery-code"
+  type="text"
+  value={recoveryCode}
+  onChange={(event) => {
+    const value = event.target.value
+      .toUpperCase()
+      .replace(/[^A-F0-9]/g, '')
+      .slice(0, 32);
+
+    const formatted =
+      value.match(/.{1,4}/g)?.join('-') || '';
+
+    setRecoveryCode(formatted);
+    setRecoveryCodeMessage('');
+  }}
+  onPaste={(event) => {
+    event.preventDefault();
+
+    const pasted = event.clipboardData
+      .getData('text')
+      .toUpperCase()
+      .replace(/[^A-F0-9]/g, '')
+      .slice(0, 32);
+
+    const formatted =
+      pasted.match(/.{1,4}/g)?.join('-') || '';
+
+    setRecoveryCode(formatted);
+    setRecoveryCodeMessage('');
+  }}
+  placeholder="XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX"
+  autoComplete="off"
+  spellCheck="false"
+  maxLength={39}
+  required
+  disabled={recoveryCodeLoading}
+/>
+
+                  <button
+                    type="submit"
+                    className="recover-submit-button"
+                    disabled={
+                      recoveryCodeLoading || passkeyLoading
+                    }
+                  >
+                    {recoveryCodeLoading
+                      ? 'Verifying recovery code...'
+                      : 'Verify recovery code'}
+
+                    {recoveryCodeLoading ? (
+                      <LoaderCircle size={18} />
+                    ) : (
+                      <ShieldCheck size={18} />
+                    )}
+                  </button>
+                </form>
+
+                {recoveryCodeMessage && (
+                  <span>{recoveryCodeMessage}</span>
                 )}
               </>
             ) : !replacementRegistered ? (
