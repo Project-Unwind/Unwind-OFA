@@ -12,6 +12,11 @@ const {
   startRecovery,
   verifyRecoveryEmail,
   emergencyLock,
+  recoveryAuthenticationOptions,
+  verifyRecoveryPasskey,
+  recoveryRegistrationOptions,
+  verifyRecoveryRegistration,
+  completeRecovery,
 } = require('../controllers/authController');
 
 const router = express.Router();
@@ -150,6 +155,55 @@ const recoveryVerifyLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+const recoveryAuthenticationOptionsLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const recoveryAuthenticationVerifyLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const recoveryRegistrationOptionsLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const recoveryRegistrationVerifyLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const recoveryCompletionLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+router.post(
+  '/recovery/passkey/options',
+  requireTrustedOrigin,
+  recoveryAuthenticationOptionsLimiter,
+  recoveryAuthenticationOptions
+);
+
+router.post(
+  '/recovery/passkey/verify',
+  requireTrustedOrigin,
+  recoveryAuthenticationVerifyLimiter,
+  verifyRecoveryPasskey
+);
+
 router.post(
   '/recovery/start',
   requireTrustedOrigin,
@@ -162,6 +216,27 @@ router.post(
   requireTrustedOrigin,
   recoveryVerifyLimiter,
   verifyRecoveryEmail
+);
+
+router.post(
+  '/recovery/replacement-passkey/options',
+  requireTrustedOrigin,
+  recoveryRegistrationOptionsLimiter,
+  recoveryRegistrationOptions
+);
+
+router.post(
+  '/recovery/replacement-passkey/verify',
+  requireTrustedOrigin,
+  recoveryRegistrationVerifyLimiter,
+  verifyRecoveryRegistration
+);
+
+router.post(
+  '/recovery/complete',
+  requireTrustedOrigin,
+  recoveryCompletionLimiter,
+  completeRecovery
 );
 
 module.exports = router;

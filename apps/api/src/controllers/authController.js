@@ -72,6 +72,30 @@ const recoveryEmailVerifySchema = z.object({
   token: z.string().min(32).max(256),
 });
 
+const recoveryAuthenticationOptionsSchema = z.object({
+  recoveryToken: z.string().min(40).max(100),
+});
+
+const recoveryAuthenticationVerifySchema = z.object({
+  recoveryToken: z.string().min(40).max(100),
+  challengeId: z.string().uuid(),
+  response: z.record(z.string(), z.unknown()),
+});
+
+const recoveryRegistrationOptionsSchema = z.object({
+  recoveryToken: z.string().min(40).max(100),
+});
+
+const recoveryRegistrationVerifySchema = z.object({
+  recoveryToken: z.string().min(40).max(100),
+  challengeId: z.string().uuid(),
+  response: z.record(z.string(), z.unknown()),
+});
+
+const recoveryCompletionSchema = z.object({
+  recoveryToken: z.string().min(40).max(100),
+});
+
 async function deletePendingUser(userId) {
   try {
     await supabase
@@ -1563,6 +1587,844 @@ async function verifyRecoveryEmail(req, res) {
   }
 }
 
+async function recoveryAuthenticationOptions(req, res) {
+  const parsed = recoveryAuthenticationOptionsSchema.safeParse(
+    req.body
+  );
+
+  if (!parsed.success) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid recovery authentication request.',
+    });
+  }
+
+  try {
+    const attemptTokenHash = createHash('sha256')
+      .update(parsed.data.recoveryToken)
+      .digest('hex');
+
+    const now = new Date().toISOString();
+
+    const {
+      data: attempt,
+      error: attemptError,
+    } = await supabase
+      .from('ofa_recovery_attempts')
+      .select('id, user_id')
+      .eq('attempt_token_hash', attemptTokenHash)
+      .not('email_verified_at', 'is', null)
+      .is('passkey_verified_at', null)
+      .is('consumed_at', null)
+      .gt('expires_at', now)
+      .maybeSingle();
+
+    if (attemptError || !attempt) {
+      return res.status(400).json({
+        success: false,
+        message: 'Your recovery session is invalid or expired.',
+      });
+    }
+
+    const {
+      data: user,
+      error: userError,
+    } = await supabase
+      .from('ofa_users')
+      .select(
+        'id, registration_completed_at, disabled_at, email_verified_at, emergency_locked_at'
+      )
+      .eq('id', attempt.user_id)
+      .maybeSingle();
+
+    if (
+      userError ||
+      !user ||
+      !user.registration_completed_at ||
+      user.disabled_at ||
+      !user.email_verified_at ||
+      !user.emergency_locked_at
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: 'This account cannot be recovered.',
+      });
+    }
+
+    const {
+      data: credentials,
+      error: credentialsError,
+    } = await supabase
+      .from('ofa_passkey_credentials')
+      .select('credential_id, transports')
+      .eq('user_id', user.id);
+
+    if (credentialsError) {
+      console.error(
+        'Recovery credential lookup failed:',
+        credentialsError.message
+      );
+
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to retrieve registered passkeys.',
+      });
+    }
+
+    if (!credentials?.length) {
+      return res.status(400).json({
+        success: false,
+        message: 'No existing passkey is available for recovery.',
+      });
+    }
+
+    const options = await generateAuthenticationOptions({
+      rpID: webauthnConfig.rpID,
+      userVerification: 'required',
+      timeout: 60000,
+      allowCredentials: credentials.map((credential) => ({
+        id: credential.credential_id,
+        transports: credential.transports || [],
+      })),
+    });
+
+    const expiresAt = new Date(
+      Date.now() + 5 * 60 * 1000
+    ).toISOString();
+
+    const {
+      data: challengeRecord,
+      error: challengeError,
+    } = await supabase
+      .from('ofa_auth_challenges')
+      .insert({
+        challenge: options.challenge,
+        user_id: user.id,
+        ceremony: 'recovery_authentication',
+        expires_at: expiresAt,
+      })
+      .select('id')
+      .single();
+
+    if (challengeError || !challengeRecord) {
+      console.error(
+        'Recovery authentication challenge creation failed:',
+        challengeError?.message
+      );
+
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to start passkey recovery.',
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      challengeId: challengeRecord.id,
+      options,
+    });
+  } catch (error) {
+    console.error(
+      'Recovery authentication options error:',
+      error.message
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to generate recovery authentication options.',
+    });
+  }
+}
+
+async function verifyRecoveryPasskey(req, res) {
+  const parsed = recoveryAuthenticationVerifySchema.safeParse(
+    req.body
+  );
+
+  if (!parsed.success) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid recovery passkey verification request.',
+    });
+  }
+
+  const {
+    recoveryToken,
+    challengeId,
+    response,
+  } = parsed.data;
+
+  try {
+    const attemptTokenHash = createHash('sha256')
+      .update(recoveryToken)
+      .digest('hex');
+
+    const now = new Date().toISOString();
+
+    const {
+      data: attempt,
+      error: attemptError,
+    } = await supabase
+      .from('ofa_recovery_attempts')
+      .select('id, user_id')
+      .eq('attempt_token_hash', attemptTokenHash)
+      .not('email_verified_at', 'is', null)
+      .is('passkey_verified_at', null)
+      .is('consumed_at', null)
+      .gt('expires_at', now)
+      .maybeSingle();
+
+    if (attemptError || !attempt) {
+      return res.status(400).json({
+        success: false,
+        message: 'Your recovery session is invalid or expired.',
+      });
+    }
+
+    const {
+      data: challengeRecord,
+      error: challengeError,
+    } = await supabase
+      .from('ofa_auth_challenges')
+      .select(
+        'id, challenge, user_id, ceremony, expires_at, consumed_at'
+      )
+      .eq('id', challengeId)
+      .eq('user_id', attempt.user_id)
+      .maybeSingle();
+
+    if (
+      challengeError ||
+      !challengeRecord ||
+      challengeRecord.ceremony !== 'recovery_authentication' ||
+      challengeRecord.consumed_at ||
+      new Date(challengeRecord.expires_at).getTime() <= Date.now()
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: 'Recovery authentication challenge is invalid or expired.',
+      });
+    }
+
+    const {
+      data: user,
+      error: userError,
+    } = await supabase
+      .from('ofa_users')
+      .select(
+        'id, registration_completed_at, disabled_at, email_verified_at, emergency_locked_at'
+      )
+      .eq('id', attempt.user_id)
+      .maybeSingle();
+
+    if (
+      userError ||
+      !user ||
+      !user.registration_completed_at ||
+      user.disabled_at ||
+      !user.email_verified_at ||
+      !user.emergency_locked_at
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: 'This account cannot be recovered.',
+      });
+    }
+
+    const credentialId =
+      typeof response.id === 'string'
+        ? response.id
+        : typeof response.rawId === 'string'
+          ? response.rawId
+          : null;
+
+    if (!credentialId) {
+      return res.status(400).json({
+        success: false,
+        message: 'No passkey credential was provided.',
+      });
+    }
+
+    // Only accept a credential belonging to this recovery account.
+    const {
+      data: storedCredential,
+      error: credentialError,
+    } = await supabase
+      .from('ofa_passkey_credentials')
+      .select(
+        'credential_id, user_id, public_key, counter, transports'
+      )
+      .eq('credential_id', credentialId)
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    if (credentialError || !storedCredential) {
+      return res.status(401).json({
+        success: false,
+        message: 'This passkey is not registered to the recovery account.',
+      });
+    }
+
+    let verification;
+
+    const suppliedUserHandle = response.userHandle;
+
+if (
+  suppliedUserHandle !== undefined &&
+  suppliedUserHandle !== null &&
+  suppliedUserHandle !== ''
+) {
+  if (
+    typeof suppliedUserHandle !== 'string' ||
+    !/^[A-Za-z0-9_-]+$/.test(suppliedUserHandle)
+  ) {
+    return res.status(401).json({
+      success: false,
+      message: 'Invalid passkey account handle.',
+    });
+  }
+
+  const decodedUserHandle = Buffer.from(
+    suppliedUserHandle,
+    'base64url'
+  );
+
+  const expectedUserHandle = Buffer.from(
+    user.id.replace(/-/g, ''),
+    'hex'
+  );
+
+  if (
+    decodedUserHandle.toString('base64url') !== suppliedUserHandle ||
+    !decodedUserHandle.equals(expectedUserHandle)
+  ) {
+    return res.status(401).json({
+      success: false,
+      message: 'Passkey account verification failed.',
+    });
+  }
+}
+
+    try {
+      verification = await verifyAuthenticationResponse({
+        response,
+        expectedChallenge: challengeRecord.challenge,
+        expectedOrigin: webauthnConfig.expectedOrigin,
+        expectedRPID: webauthnConfig.rpID,
+
+        credential: {
+          id: storedCredential.credential_id,
+          publicKey: Buffer.from(
+            storedCredential.public_key,
+            'base64url'
+          ),
+          counter: Number(storedCredential.counter),
+          transports: storedCredential.transports || [],
+        },
+
+        requireUserVerification: true,
+      });
+    } catch (verificationError) {
+      console.warn(
+        'Recovery passkey verification rejected:',
+        verificationError.message
+      );
+
+      return res.status(401).json({
+        success: false,
+        message: 'Passkey verification failed. Please try again.',
+      });
+    }
+
+    if (
+      !verification.verified ||
+      !verification.authenticationInfo ||
+      !verification.authenticationInfo.userVerified
+    ) {
+      return res.status(401).json({
+        success: false,
+        message: 'Passkey verification was unsuccessful.',
+      });
+    }
+
+    const newCounter =
+      verification.authenticationInfo.newCounter;
+
+    if (
+      !Number.isSafeInteger(newCounter) ||
+      newCounter < 0
+    ) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid authenticator counter.',
+      });
+    }
+
+    // Atomically consume the recovery challenge,
+    // update the credential counter, and mark the
+    // recovery attempt as passkey-verified.
+    const {
+      data: recoveryRecords,
+      error: recoveryError,
+    } = await supabase.rpc(
+      'complete_ofa_recovery_authentication',
+      {
+        p_attempt_token_hash: attemptTokenHash,
+        p_challenge_id: challengeId,
+        p_credential_id: storedCredential.credential_id,
+        p_new_counter: newCounter,
+      }
+    );
+
+    if (recoveryError || !recoveryRecords?.length) {
+      console.error(
+        'Recovery passkey completion failed:',
+        recoveryError?.message
+      );
+
+      return res.status(401).json({
+        success: false,
+        message: 'Unable to verify the recovery passkey.',
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Existing passkey verified successfully.',
+    });
+  } catch (error) {
+    console.error(
+      'Recovery passkey verification error:',
+      error.message
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: 'An unexpected recovery authentication error occurred.',
+    });
+  }
+}
+
+
+async function recoveryRegistrationOptions(req, res) {
+  const parsed = recoveryRegistrationOptionsSchema.safeParse(req.body);
+
+  if (!parsed.success) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid replacement passkey request.',
+    });
+  }
+
+  try {
+    const attemptTokenHash = createHash('sha256')
+      .update(parsed.data.recoveryToken)
+      .digest('hex');
+
+    const now = new Date().toISOString();
+
+    const { data: attempt, error: attemptError } = await supabase
+      .from('ofa_recovery_attempts')
+      .select('id, user_id, recovery_credential_id')
+      .eq('attempt_token_hash', attemptTokenHash)
+      .not('email_verified_at', 'is', null)
+      .not('passkey_verified_at', 'is', null)
+      .is('consumed_at', null)
+      .is('recovery_credential_id', null)
+      .gt('expires_at', now)
+      .maybeSingle();
+
+    if (attemptError || !attempt) {
+      return res.status(400).json({
+        success: false,
+        message: 'Your recovery session is invalid, expired, or already used.',
+      });
+    }
+
+    const { data: user, error: userError } = await supabase
+      .from('ofa_users')
+      .select(
+        'id, display_name, registration_completed_at, disabled_at, email_verified_at, emergency_locked_at'
+      )
+      .eq('id', attempt.user_id)
+      .maybeSingle();
+
+    if (
+      userError ||
+      !user ||
+      !user.registration_completed_at ||
+      user.disabled_at ||
+      !user.email_verified_at ||
+      !user.emergency_locked_at
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: 'This account cannot be recovered.',
+      });
+    }
+
+    const { data: existingCredentials, error: credentialsError } =
+      await supabase
+        .from('ofa_passkey_credentials')
+        .select('credential_id, transports')
+        .eq('user_id', user.id);
+
+    if (credentialsError) {
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to retrieve existing passkeys.',
+      });
+    }
+
+const options = await generateRegistrationOptions({
+  rpName: webauthnConfig.rpName,
+  rpID: webauthnConfig.rpID,
+
+  userID: Buffer.from(
+    user.id.replace(/-/g, ''),
+    'hex'
+  ),
+
+  userName: `ofa-${user.id}`,
+  userDisplayName: user.display_name,
+
+  attestationType: 'none',
+
+  authenticatorSelection: {
+    authenticatorAttachment: 'platform',
+    residentKey: 'required',
+    userVerification: 'required',
+  },
+
+  // Intentionally omit excludeCredentials during recovery.
+  // The user must be able to register a replacement passkey
+  // even when the authenticator already has an older credential.
+
+  timeout: 60000,
+});
+
+    const expiresAt = new Date(
+      Date.now() + 5 * 60 * 1000
+    ).toISOString();
+
+    const { data: challengeRecord, error: challengeError } =
+      await supabase
+        .from('ofa_auth_challenges')
+        .insert({
+          challenge: options.challenge,
+          user_id: user.id,
+          ceremony: 'recovery_registration',
+          expires_at: expiresAt,
+        })
+        .select('id')
+        .single();
+
+    if (challengeError || !challengeRecord) {
+      console.error(
+        'Replacement registration challenge failed:',
+        challengeError?.message
+      );
+
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to start replacement passkey registration.',
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      challengeId: challengeRecord.id,
+      options,
+    });
+  } catch (error) {
+    console.error(
+      'Recovery registration options error:',
+      error.message
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to generate replacement passkey options.',
+    });
+  }
+}
+
+async function verifyRecoveryRegistration(req, res) {
+  const parsed = recoveryRegistrationVerifySchema.safeParse(req.body);
+
+  if (!parsed.success) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid replacement passkey verification request.',
+    });
+  }
+
+  const {
+    recoveryToken,
+    challengeId,
+    response,
+  } = parsed.data;
+
+  try {
+    const attemptTokenHash = createHash('sha256')
+      .update(recoveryToken)
+      .digest('hex');
+
+    const now = new Date().toISOString();
+
+    const { data: attempt, error: attemptError } = await supabase
+      .from('ofa_recovery_attempts')
+      .select('id, user_id, recovery_credential_id')
+      .eq('attempt_token_hash', attemptTokenHash)
+      .not('email_verified_at', 'is', null)
+      .not('passkey_verified_at', 'is', null)
+      .is('consumed_at', null)
+      .is('recovery_credential_id', null)
+      .gt('expires_at', now)
+      .maybeSingle();
+
+    if (attemptError || !attempt) {
+      return res.status(400).json({
+        success: false,
+        message: 'Your recovery session is invalid, expired, or already used.',
+      });
+    }
+
+    const { data: challengeRecord, error: challengeError } =
+      await supabase
+        .from('ofa_auth_challenges')
+        .select(
+          'id, challenge, user_id, ceremony, expires_at, consumed_at'
+        )
+        .eq('id', challengeId)
+        .eq('user_id', attempt.user_id)
+        .maybeSingle();
+
+    if (
+      challengeError ||
+      !challengeRecord ||
+      challengeRecord.ceremony !== 'recovery_registration' ||
+      challengeRecord.consumed_at ||
+      new Date(challengeRecord.expires_at).getTime() <= Date.now()
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: 'Replacement registration challenge is invalid or expired.',
+      });
+    }
+
+    const { data: user, error: userError } = await supabase
+      .from('ofa_users')
+      .select(
+        'id, registration_completed_at, disabled_at, email_verified_at, emergency_locked_at'
+      )
+      .eq('id', attempt.user_id)
+      .maybeSingle();
+
+    if (
+      userError ||
+      !user ||
+      !user.registration_completed_at ||
+      user.disabled_at ||
+      !user.email_verified_at ||
+      !user.emergency_locked_at
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: 'This account cannot be recovered.',
+      });
+    }
+
+    let verification;
+
+    try {
+      verification = await verifyRegistrationResponse({
+        response,
+        expectedChallenge: challengeRecord.challenge,
+        expectedOrigin: webauthnConfig.expectedOrigin,
+        expectedRPID: webauthnConfig.rpID,
+        requireUserVerification: true,
+      });
+    } catch (verificationError) {
+      console.warn(
+        'Replacement passkey verification rejected:',
+        verificationError.message
+      );
+
+      return res.status(400).json({
+        success: false,
+        message: 'Replacement passkey verification failed.',
+      });
+    }
+
+    if (!verification.verified || !verification.registrationInfo) {
+      return res.status(400).json({
+        success: false,
+        message: 'Replacement passkey registration was unsuccessful.',
+      });
+    }
+
+    const {
+      credential,
+      credentialDeviceType,
+      credentialBackedUp,
+      aaguid,
+    } = verification.registrationInfo;
+
+    if (
+      !credential ||
+      typeof credential.id !== 'string' ||
+      !credential.id ||
+      !credential.publicKey ||
+      !Number.isSafeInteger(credential.counter) ||
+      credential.counter < 0 ||
+      !['singleDevice', 'multiDevice'].includes(
+        credentialDeviceType
+      ) ||
+      typeof credentialBackedUp !== 'boolean'
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid replacement passkey credential.',
+      });
+    }
+
+    const transports = Array.isArray(credential.transports)
+      ? credential.transports.filter(
+          (transport) => typeof transport === 'string'
+        )
+      : [];
+
+    const { data: recoveryRecords, error: recoveryError } =
+      await supabase.rpc('register_ofa_recovery_passkey', {
+        p_attempt_token_hash: attemptTokenHash,
+        p_challenge_id: challengeId,
+        p_credential_id: credential.id,
+        p_public_key: Buffer.from(
+          credential.publicKey
+        ).toString('base64url'),
+        p_counter: credential.counter,
+        p_transports: transports,
+        p_device_type: credentialDeviceType,
+        p_backed_up: credentialBackedUp,
+        p_aaguid: aaguid || null,
+      });
+
+    if (recoveryError || !recoveryRecords?.length) {
+      console.error(
+        'Replacement passkey storage failed:',
+        recoveryError?.message
+      );
+
+      return res.status(409).json({
+        success: false,
+        message: 'Unable to register the replacement passkey.',
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Replacement passkey registered successfully.',
+    });
+  } catch (error) {
+    console.error(
+      'Replacement passkey registration error:',
+      error.message
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: 'An unexpected replacement registration error occurred.',
+    });
+  }
+}
+
+async function completeRecovery(req, res) {
+  const parsed = recoveryCompletionSchema.safeParse(req.body);
+
+  if (!parsed.success) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid recovery completion request.',
+    });
+  }
+
+  try {
+    const attemptTokenHash = createHash('sha256')
+      .update(parsed.data.recoveryToken)
+      .digest('hex');
+
+    // Generate ten independent 128-bit recovery codes.
+    // Plaintext codes are never stored in the database.
+    const recoveryCodes = Array.from(
+      { length: 10 },
+      () => {
+        const rawCode = randomBytes(16)
+          .toString('hex')
+          .toUpperCase();
+
+        return rawCode.match(/.{1,4}/g).join('-');
+      }
+    );
+
+    // Hash the exact displayed code before storing it.
+    const recoveryCodeHashes = recoveryCodes.map((code) =>
+      createHash('sha256')
+        .update(code)
+        .digest('hex')
+    );
+
+    // The database RPC atomically:
+    // - validates the recovery attempt and replacement passkey
+    // - revokes active sessions
+    // - removes old passkeys, retaining the replacement
+    // - replaces old recovery codes
+    // - consumes the recovery attempt
+    // - unlocks the account
+    const { data, error } = await supabase.rpc(
+      'complete_ofa_recovery',
+      {
+        p_attempt_token_hash: attemptTokenHash,
+        p_recovery_code_hashes: recoveryCodeHashes,
+      }
+    );
+
+    if (error || !data?.length) {
+      console.error(
+        'Final account recovery failed:',
+        error?.message
+      );
+
+      return res.status(409).json({
+        success: false,
+        message:
+          'Unable to complete account recovery. Your account has not been confirmed as unlocked.',
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message:
+        'Your account has been recovered successfully. Save your new recovery codes securely.',
+      recoveryCodes,
+      user: {
+        id: data[0].recovery_user_id,
+        displayName: data[0].display_name,
+      },
+    });
+  } catch (error) {
+    console.error(
+      'Final account recovery error:',
+      error.message
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: 'An unexpected account recovery error occurred.',
+    });
+  }
+}
+
 module.exports = {
   registerOptions,
   registerVerify,
@@ -1574,4 +2436,9 @@ module.exports = {
   logout,
   startRecovery,
   verifyRecoveryEmail,
+  recoveryAuthenticationOptions,
+  verifyRecoveryPasskey,
+  recoveryRegistrationOptions,
+  verifyRecoveryRegistration,
+  completeRecovery,
 };

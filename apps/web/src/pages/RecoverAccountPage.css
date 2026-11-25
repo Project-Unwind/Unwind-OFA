@@ -1,0 +1,256 @@
+.recover-account-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: #020606;
+  color: #e8f5f2;
+  position: relative;
+}
+
+.recover-back-link {
+  position: absolute;
+  top: 32px;
+  left: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #9aafaa;
+  font-size: 13px;
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+.recover-back-link:hover {
+  color: #16f5d0;
+}
+
+.recover-account-card {
+  width: 100%;
+  max-width: 460px;
+  padding: 42px;
+  border: 1px solid rgba(22, 245, 208, 0.13);
+  border-radius: 20px;
+  background: #071010;
+  text-align: center;
+}
+
+.recover-account-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 42px;
+  color: #e8f5f2;
+  font-size: 22px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.recover-account-brand > span:last-child > span {
+  color: #16f5d0;
+}
+
+.recover-brand-icon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border-radius: 12px;
+  background: rgba(22, 245, 208, 0.1);
+  color: #16f5d0;
+}
+
+.recover-status {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 24px;
+}
+
+.recover-status.idle,
+.recover-status.verifying,
+.recover-status.submitting {
+  color: #16f5d0;
+}
+
+.recover-status.verifying,
+.recover-status.submitting {
+  animation: recover-spin 1.5s linear infinite;
+}
+
+.recover-status.sent,
+.recover-status.verified {
+  color: #16f5d0;
+}
+
+.recover-status.error {
+  color: #ff7777;
+}
+
+.recover-heading h1 {
+  margin: 12px 0;
+  color: #e8f5f2;
+  font-size: 27px;
+}
+
+.recover-eyebrow {
+  color: #16f5d0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 2px;
+}
+
+.recover-heading p {
+  color: #9aafaa;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.recover-form {
+  margin-top: 28px;
+  text-align: left;
+}
+
+.recover-form label {
+  display: block;
+  margin-bottom: 9px;
+  color: #c7d8d3;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.recover-form input {
+  width: 100%;
+  min-height: 48px;
+  padding: 0 14px;
+  border: 1px solid rgba(22, 245, 208, 0.16);
+  border-radius: 9px;
+  outline: none;
+  background: #020909;
+  color: #e8f5f2;
+  font: inherit;
+  font-size: 14px;
+}
+
+.recover-form input:focus {
+  border-color: #16f5d0;
+  box-shadow: 0 0 0 3px rgba(22, 245, 208, 0.08);
+}
+
+.recover-form input::placeholder {
+  color: #61736e;
+}
+
+.recover-submit-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 48px;
+  margin-top: 18px;
+  border: none;
+  border-radius: 9px;
+  background: #16f5d0;
+  color: #020606;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.2s ease, opacity 0.2s ease;
+}
+
+.recover-submit-button:hover:not(:disabled) {
+  background: #b7fff2;
+}
+
+.recover-submit-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.recover-secondary-link {
+  display: inline-block;
+  margin-top: 24px;
+  color: #16f5d0;
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.recover-secondary-link:hover {
+  color: #b7fff2;
+  text-decoration: underline;
+}
+
+.recover-next-step {
+  margin-top: 24px;
+  padding: 16px;
+  border: 1px solid rgba(22, 245, 208, 0.13);
+  border-radius: 10px;
+  background: rgba(22, 245, 208, 0.04);
+}
+
+.recover-next-step p {
+  margin: 0 0 10px;
+  color: #c7d8d3;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.recover-next-step span {
+  color: #16f5d0;
+  font-size: 12px;
+}
+
+.recover-security-note {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 30px 0 0;
+  color: #829891;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.recover-security-note svg {
+  flex-shrink: 0;
+  color: #16f5d0;
+}
+
+.recover-footer {
+  margin-top: 32px;
+  color: #718681;
+  font-size: 12px;
+  text-align: center;
+}
+
+@keyframes recover-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 480px) {
+  .recover-account-page {
+    padding: 80px 18px 24px;
+  }
+
+  .recover-back-link {
+    top: 24px;
+    left: 20px;
+  }
+
+  .recover-account-card {
+    padding: 30px 22px;
+  }
+
+  .recover-account-brand {
+    margin-bottom: 34px;
+  }
+
+  .recover-heading h1 {
+    font-size: 24px;
+  }
+}

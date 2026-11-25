@@ -11,6 +11,7 @@ import DashboardPage from './pages/DashboardPage';
 import ProtectedRoute from './components/ProtectedRoute';
 import NotFoundPage from './pages/NotFoundPage';
 import EmergencyLockPage from './pages/EmergencyLockPage';
+import RecoverAccountPage from './pages/RecoverAccountPage';
 
 function App() {
   return (
@@ -31,6 +32,11 @@ function App() {
           <Route
   path="/emergency-lock"
   element={<EmergencyLockPage />}
+/>
+
+<Route
+  path="/recover-account"
+  element={<RecoverAccountPage />}
 />
 
           <Route element={<ProtectedRoute />}>
