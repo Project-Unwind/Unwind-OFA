@@ -12,6 +12,32 @@ import { startAuthentication } from '@simplewebauthn/browser';
 import { useAuth } from '../context/AuthContext';
 import './LoginPage.css';
 
+type PasskeyOptions = Parameters<typeof startAuthentication>[0]['optionsJSON'];
+
+interface LoginOptionsResponse {
+  success: boolean;
+  message?: string;
+  options: PasskeyOptions;
+  challengeId: string;
+}
+
+interface ApiResponse {
+  success: boolean;
+  message?: string;
+}
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    if (error.name === 'NotAllowedError') {
+      return 'Passkey sign-in was cancelled or not allowed. Please try again.';
+    }
+
+    return error.message || 'Unable to sign in. Please try again.';
+  }
+
+  return 'Unable to sign in. Please try again.';
+}
+
 function LoginPage() {
   const router = useRouter();
   const { refreshSession } = useAuth();
@@ -20,7 +46,9 @@ function LoginPage() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
-  const signInWithPasskey = async () => {
+  const signInWithPasskey = async (): Promise<void> => {
+    if (loading) return;
+
     setLoading(true);
     setError('');
     setMessage('');
@@ -37,7 +65,8 @@ function LoginPage() {
         }
       );
 
-      const optionsResult = await optionsResponse.json();
+      const optionsResult: LoginOptionsResponse =
+        await optionsResponse.json();
 
       if (!optionsResponse.ok || !optionsResult.success) {
         throw new Error(
@@ -49,8 +78,6 @@ function LoginPage() {
       const authenticationResponse = await startAuthentication({
         optionsJSON: optionsResult.options,
       });
-      console.log('Passkey ID from browser:', authenticationResponse.id);
-console.log('Passkey rawId from browser:', authenticationResponse.rawId);
 
       const verifyResponse = await fetch(
         '/api/auth/login/verify',
@@ -67,7 +94,8 @@ console.log('Passkey rawId from browser:', authenticationResponse.rawId);
         }
       );
 
-      const verifyResult = await verifyResponse.json();
+      const verifyResult: ApiResponse =
+        await verifyResponse.json();
 
       if (!verifyResponse.ok || !verifyResult.success) {
         throw new Error(
@@ -87,19 +115,15 @@ console.log('Passkey rawId from browser:', authenticationResponse.rawId);
       setMessage('You have successfully signed in.');
 
       router.replace('/dashboard');
-    } catch (signInError) {
-      console.error('Passkey sign-in failed:', signInError);
+    } catch (signInError: unknown) {
+      console.error(
+        'Passkey sign-in failed:',
+        signInError instanceof Error
+          ? signInError.message
+          : signInError
+      );
 
-      if (signInError.name === 'NotAllowedError') {
-        setError(
-          'Passkey sign-in was cancelled or not allowed. Please try again.'
-        );
-      } else {
-        setError(
-          signInError.message ||
-            'Unable to sign in. Please try again.'
-        );
-      }
+      setError(getErrorMessage(signInError));
     } finally {
       setLoading(false);
     }
