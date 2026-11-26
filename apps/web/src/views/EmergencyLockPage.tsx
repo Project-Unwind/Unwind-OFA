@@ -3,18 +3,34 @@
 import { useState, Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { ShieldAlert, ShieldCheck, LockKeyhole } from 'lucide-react';
+import {
+  ShieldAlert,
+  ShieldCheck,
+  LockKeyhole,
+} from 'lucide-react';
 import './EmergencyLockPage.css';
+
+type EmergencyLockStatus = 'idle' | 'success' | 'error';
+
+interface EmergencyLockResponse {
+  message?: string;
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error
+    ? error.message
+    : 'Something went wrong. Please try again.';
+}
 
 function EmergencyLockContent() {
   const searchParams = useSearchParams();
   const token = searchParams.get('token');
 
   const [loading, setLoading] = useState(false);
-  const [status, setStatus] = useState('idle');
+  const [status, setStatus] = useState<EmergencyLockStatus>('idle');
   const [message, setMessage] = useState('');
 
-  const handleEmergencyLock = async () => {
+  const handleEmergencyLock = async (): Promise<void> => {
     if (!token || loading) return;
 
     setLoading(true);
@@ -30,7 +46,7 @@ function EmergencyLockContent() {
         body: JSON.stringify({ token }),
       });
 
-      const data = await response.json();
+      const data: EmergencyLockResponse = await response.json();
 
       if (!response.ok) {
         throw new Error(
@@ -44,11 +60,9 @@ function EmergencyLockContent() {
         data.message ||
           'Your account has been locked and all active sessions have been revoked.'
       );
-    } catch (error) {
+    } catch (error: unknown) {
       setStatus('error');
-      setMessage(
-        error.message || 'Something went wrong. Please try again.'
-      );
+      setMessage(getErrorMessage(error));
     } finally {
       setLoading(false);
     }
