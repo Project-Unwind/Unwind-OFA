@@ -1,6 +1,17 @@
 import Link from 'next/link';
 import { ArrowRight } from 'lucide-react';
+import type { ReactNode, MouseEventHandler, ButtonHTMLAttributes } from 'react';
 import './Button.css';
+
+interface ButtonProps {
+  children: ReactNode;
+  href?: string;
+  onClick?: MouseEventHandler<HTMLButtonElement>;
+  variant?: string;
+  icon?: boolean;
+  type?: ButtonHTMLAttributes<HTMLButtonElement>['type'];
+  className?: string;
+}
 
 function Button({
   children,
@@ -10,7 +21,7 @@ function Button({
   icon = false,
   type = 'button',
   className = '',
-}) {
+}: ButtonProps) {
   const classes = `ofa-button ofa-button-${variant} ${className}`;
 
   const content = (
