@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, Suspense } from 'react';
+import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import {
@@ -11,11 +12,26 @@ import {
 } from 'lucide-react';
 import './VerifyEmailPage.css';
 
+type VerificationStatus = 'loading' | 'success' | 'error';
+
+interface VerificationResponse {
+  success: boolean;
+  message?: string;
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error
+    ? error.message
+    : 'Unable to verify your email address. Please try again.';
+}
+
 function VerifyEmailContent() {
   const searchParams = useSearchParams();
   const token = searchParams.get('token');
 
-  const [status, setStatus] = useState('loading');
+  const [status, setStatus] =
+    useState<VerificationStatus>('loading');
+
   const [message, setMessage] = useState(
     'Verifying your email address...'
   );
@@ -23,7 +39,7 @@ function VerifyEmailContent() {
   const verificationStarted = useRef(false);
 
   useEffect(() => {
-    async function verifyEmail() {
+    async function verifyEmail(): Promise<void> {
       if (!token) {
         setStatus('error');
         setMessage('The verification link is missing its token.');
@@ -45,7 +61,8 @@ function VerifyEmailContent() {
           body: JSON.stringify({ token }),
         });
 
-        const result = await response.json();
+        const result =
+          (await response.json()) as VerificationResponse;
 
         if (!response.ok || !result.success) {
           throw new Error(
@@ -54,17 +71,14 @@ function VerifyEmailContent() {
         }
 
         setStatus('success');
-        setMessage(result.message);
-      } catch (error) {
+        setMessage(result.message ?? 'Your email has been verified successfully.');
+      } catch (error: unknown) {
         setStatus('error');
-        setMessage(
-          error.message ||
-            'Unable to verify your email address. Please try again.'
-        );
+        setMessage(getErrorMessage(error));
       }
     }
 
-    verifyEmail();
+    void verifyEmail();
   }, [token]);
 
   return (
