@@ -1,6 +1,13 @@
+
 'use client';
 
-import { useEffect, useRef, useState, Suspense } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  Suspense,
+  type FormEvent,
+} from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -18,15 +25,63 @@ import {
 } from 'lucide-react';
 import './RecoverAccountPage.css';
 
+// --------------------------------------------------
+// TYPES
+// --------------------------------------------------
+
+type RecoveryStatus =
+  | 'idle'
+  | 'verifying'
+  | 'submitting'
+  | 'sent'
+  | 'verified'
+  | 'error';
+
+interface ApiResponse {
+  success: boolean;
+  message?: string;
+}
+
+interface RecoveryEmailResponse extends ApiResponse {
+  recoveryToken?: string;
+}
+
+interface AuthenticationOptionsResponse extends ApiResponse {
+  options?: Parameters<typeof startAuthentication>[0]['optionsJSON'];
+  challengeId?: string;
+}
+
+interface RegistrationOptionsResponse extends ApiResponse {
+  options?: Parameters<typeof startRegistration>[0]['optionsJSON'];
+  challengeId?: string;
+}
+
+interface RecoveryCompletionResponse extends ApiResponse {
+  recoveryCodes?: unknown;
+}
+
+function getErrorMessage(
+  error: unknown,
+  fallback: string
+): string {
+  return error instanceof Error ? error.message : fallback;
+}
+
+// --------------------------------------------------
+// RECOVERY CONTENT
+// --------------------------------------------------
+
 function RecoverAccountContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const urlToken = searchParams.get('token');
 
   const [email, setEmail] = useState('');
-  const [status, setStatus] = useState(
+
+  const [status, setStatus] = useState<RecoveryStatus>(
     urlToken ? 'verifying' : 'idle'
   );
+
   const [message, setMessage] = useState(
     urlToken ? 'Verifying your recovery link...' : ''
   );
@@ -49,7 +104,7 @@ function RecoverAccountContent() {
 
   const [recoveryCompleting, setRecoveryCompleting] = useState(false);
   const [recoveryCompleted, setRecoveryCompleted] = useState(false);
-  const [recoveryCodes, setRecoveryCodes] = useState([]);
+  const [recoveryCodes, setRecoveryCodes] = useState<string[]>([]);
   const [completionMessage, setCompletionMessage] = useState('');
   const [codesCopied, setCodesCopied] = useState(false);
   const [codesSaved, setCodesSaved] = useState(false);
@@ -61,7 +116,7 @@ function RecoverAccountContent() {
   // --------------------------------------------------
 
   useEffect(() => {
-    async function verifyRecoveryEmail() {
+    async function verifyRecoveryEmail(): Promise<void> {
       if (!urlToken || verificationStarted.current) {
         return;
       }
@@ -85,7 +140,8 @@ function RecoverAccountContent() {
           }
         );
 
-        const result = await response.json();
+        const result: RecoveryEmailResponse =
+          await response.json();
 
         if (!response.ok || !result.success) {
           throw new Error(
@@ -107,25 +163,29 @@ function RecoverAccountContent() {
         );
 
         router.replace('/recover-account', { scroll: false });
-      } catch (error) {
+      } catch (error: unknown) {
         setStatus('error');
         setMessage(
-          error.message ||
+          getErrorMessage(
+            error,
             'Unable to verify your recovery link.'
+          )
         );
 
         router.replace('/recover-account', { scroll: false });
       }
     }
 
-    verifyRecoveryEmail();
+    void verifyRecoveryEmail();
   }, [urlToken, router]);
 
   // --------------------------------------------------
   // REQUEST ACCOUNT RECOVERY
   // --------------------------------------------------
 
-  const requestRecovery = async (event) => {
+  const requestRecovery = async (
+    event: FormEvent<HTMLFormElement>
+  ): Promise<void> => {
     event.preventDefault();
 
     if (!email.trim()) {
@@ -152,7 +212,7 @@ function RecoverAccountContent() {
         }
       );
 
-      const result = await response.json();
+      const result: ApiResponse = await response.json();
 
       if (!response.ok || !result.success) {
         throw new Error(
@@ -166,11 +226,13 @@ function RecoverAccountContent() {
         result.message ||
           'If an eligible account exists for that email address, a recovery link will be sent.'
       );
-    } catch (error) {
+    } catch (error: unknown) {
       setStatus('error');
       setMessage(
-        error.message ||
+        getErrorMessage(
+          error,
           'Unable to process your request. Please try again.'
+        )
       );
     } finally {
       setLoading(false);
@@ -181,7 +243,7 @@ function RecoverAccountContent() {
   // VERIFY EXISTING PASSKEY
   // --------------------------------------------------
 
-  const verifyExistingPasskey = async () => {
+  const verifyExistingPasskey = async (): Promise<void> => {
     if (!recoveryToken || passkeyLoading || passkeyVerified) {
       return;
     }
@@ -203,7 +265,8 @@ function RecoverAccountContent() {
         }
       );
 
-      const optionsResult = await optionsResponse.json();
+      const optionsResult: AuthenticationOptionsResponse =
+        await optionsResponse.json();
 
       if (!optionsResponse.ok || !optionsResult.success) {
         throw new Error(
@@ -243,7 +306,8 @@ function RecoverAccountContent() {
         }
       );
 
-      const verifyResult = await verifyResponse.json();
+      const verifyResult: ApiResponse =
+        await verifyResponse.json();
 
       if (!verifyResponse.ok || !verifyResult.success) {
         throw new Error(
@@ -256,18 +320,21 @@ function RecoverAccountContent() {
       setPasskeyMessage(
         'Your existing passkey has been verified successfully.'
       );
-    } catch (error) {
+    } catch (error: unknown) {
       if (
-        error.name === 'NotAllowedError' ||
-        error.name === 'AbortError'
+        error instanceof Error &&
+        (error.name === 'NotAllowedError' ||
+          error.name === 'AbortError')
       ) {
         setPasskeyMessage(
           'Passkey verification was cancelled. You can try again.'
         );
       } else {
         setPasskeyMessage(
-          error.message ||
+          getErrorMessage(
+            error,
             'Passkey verification failed. Please try again.'
+          )
         );
       }
     } finally {
@@ -276,74 +343,79 @@ function RecoverAccountContent() {
   };
 
   // --------------------------------------------------
-// VERIFY RECOVERY CODE
-// --------------------------------------------------
+  // VERIFY RECOVERY CODE
+  // --------------------------------------------------
 
-const verifyRecoveryCode = async (event) => {
-  event.preventDefault();
+  const verifyRecoveryCode = async (
+    event: FormEvent<HTMLFormElement>
+  ): Promise<void> => {
+    event.preventDefault();
 
-  if (
-    !recoveryToken ||
-    recoveryCodeLoading ||
-    recoveryCodeVerified
-  ) {
-    return;
-  }
-
-  const normalizedCode = recoveryCode.trim().toUpperCase();
-
-  if (!/^[A-F0-9]{4}(?:-[A-F0-9]{4}){7}$/.test(normalizedCode)) {
-    setRecoveryCodeMessage(
-      'Enter a valid recovery code in the format XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX.'
-    );
-    return;
-  }
-
-  setRecoveryCodeLoading(true);
-  setRecoveryCodeMessage('Verifying your recovery code...');
-
-  try {
-    const response = await fetch(
-      '/api/auth/recovery/code/verify',
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          recoveryToken,
-          recoveryCode: normalizedCode,
-        }),
-      }
-    );
-
-    const result = await response.json();
-
-    if (!response.ok || !result.success) {
-      throw new Error(
-        result.message || 'Recovery code verification failed.'
-      );
+    if (
+      !recoveryToken ||
+      recoveryCodeLoading ||
+      recoveryCodeVerified
+    ) {
+      return;
     }
 
-    setRecoveryCodeVerified(true);
-    setRecoveryCode('');
-    setRecoveryCodeMessage(
-      'Your recovery code has been verified successfully.'
-    );
-  } catch (error) {
-    setRecoveryCodeMessage(
-      error.message || 'Unable to verify your recovery code.'
-    );
-  } finally {
-    setRecoveryCodeLoading(false);
-  }
-};
+    const normalizedCode = recoveryCode.trim().toUpperCase();
+
+    if (!/^[A-F0-9]{4}(?:-[A-F0-9]{4}){7}$/.test(normalizedCode)) {
+      setRecoveryCodeMessage(
+        'Enter a valid recovery code in the format XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX.'
+      );
+      return;
+    }
+
+    setRecoveryCodeLoading(true);
+    setRecoveryCodeMessage('Verifying your recovery code...');
+
+    try {
+      const response = await fetch(
+        '/api/auth/recovery/code/verify',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            recoveryToken,
+            recoveryCode: normalizedCode,
+          }),
+        }
+      );
+
+      const result: ApiResponse = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(
+          result.message || 'Recovery code verification failed.'
+        );
+      }
+
+      setRecoveryCodeVerified(true);
+      setRecoveryCode('');
+      setRecoveryCodeMessage(
+        'Your recovery code has been verified successfully.'
+      );
+    } catch (error: unknown) {
+      setRecoveryCodeMessage(
+        getErrorMessage(
+          error,
+          'Unable to verify your recovery code.'
+        )
+      );
+    } finally {
+      setRecoveryCodeLoading(false);
+    }
+  };
 
   // --------------------------------------------------
   // REGISTER REPLACEMENT PASSKEY
   // --------------------------------------------------
 
-  const registerReplacementPasskey = async () => {
+  const registerReplacementPasskey = async (): Promise<void> => {
     if (
       !recoveryToken ||
       !(passkeyVerified || recoveryCodeVerified) ||
@@ -372,7 +444,8 @@ const verifyRecoveryCode = async (event) => {
         }
       );
 
-      const optionsResult = await optionsResponse.json();
+      const optionsResult: RegistrationOptionsResponse =
+        await optionsResponse.json();
 
       if (!optionsResponse.ok || !optionsResult.success) {
         throw new Error(
@@ -414,7 +487,8 @@ const verifyRecoveryCode = async (event) => {
         }
       );
 
-      const verifyResult = await verifyResponse.json();
+      const verifyResult: ApiResponse =
+        await verifyResponse.json();
 
       if (!verifyResponse.ok || !verifyResult.success) {
         throw new Error(
@@ -427,18 +501,21 @@ const verifyRecoveryCode = async (event) => {
       setReplacementMessage(
         'Your replacement passkey has been registered successfully.'
       );
-    } catch (error) {
+    } catch (error: unknown) {
       if (
-        error.name === 'NotAllowedError' ||
-        error.name === 'AbortError'
+        error instanceof Error &&
+        (error.name === 'NotAllowedError' ||
+          error.name === 'AbortError')
       ) {
         setReplacementMessage(
           'Passkey registration was cancelled. You can try again.'
         );
       } else {
         setReplacementMessage(
-          error.message ||
+          getErrorMessage(
+            error,
             'Replacement passkey registration failed. Please try again.'
+          )
         );
       }
     } finally {
@@ -450,7 +527,7 @@ const verifyRecoveryCode = async (event) => {
   // COMPLETE ACCOUNT RECOVERY
   // --------------------------------------------------
 
-  const completeRecovery = async () => {
+  const completeRecovery = async (): Promise<void> => {
     if (
       !recoveryToken ||
       !replacementRegistered ||
@@ -477,7 +554,8 @@ const verifyRecoveryCode = async (event) => {
         }
       );
 
-      const result = await response.json();
+      const result: RecoveryCompletionResponse =
+        await response.json();
 
       if (!response.ok || !result.success) {
         throw new Error(
@@ -490,7 +568,8 @@ const verifyRecoveryCode = async (event) => {
         !Array.isArray(result.recoveryCodes) ||
         result.recoveryCodes.length !== 10 ||
         !result.recoveryCodes.every(
-          (code) => typeof code === 'string' && code.length > 0
+          (code: unknown): code is string =>
+            typeof code === 'string' && code.length > 0
         )
       ) {
         throw new Error(
@@ -510,10 +589,12 @@ const verifyRecoveryCode = async (event) => {
       setMessage(
         'Your Unwind OFA account has been recovered.'
       );
-    } catch (error) {
+    } catch (error: unknown) {
       setCompletionMessage(
-        error.message ||
+        getErrorMessage(
+          error,
           'Account recovery failed. Please try again.'
+        )
       );
     } finally {
       setRecoveryCompleting(false);
@@ -524,7 +605,7 @@ const verifyRecoveryCode = async (event) => {
   // COPY AND SAVE RECOVERY CODES
   // --------------------------------------------------
 
-  const copyRecoveryCodes = async () => {
+  const copyRecoveryCodes = async (): Promise<void> => {
     if (!recoveryCodes.length) {
       return;
     }
@@ -546,6 +627,10 @@ const verifyRecoveryCode = async (event) => {
   };
 
   const isVerified = status === 'verified';
+
+  // --------------------------------------------------
+  // UI
+  // --------------------------------------------------
 
   return (
     <main className="recover-account-page">
@@ -608,10 +693,10 @@ const verifyRecoveryCode = async (event) => {
                 : replacementRegistered
                   ? 'Replacement passkey registered'
                   : passkeyVerified
-  ? 'Passkey verified'
-  : recoveryCodeVerified
-    ? 'Recovery code verified'
-    : 'Verify your identity'
+                    ? 'Passkey verified'
+                    : recoveryCodeVerified
+                      ? 'Recovery code verified'
+                      : 'Verify your identity'
             )}
 
             {status === 'error' &&
@@ -637,24 +722,20 @@ const verifyRecoveryCode = async (event) => {
             <label htmlFor="recovery-email">
               Email address
             </label>
-
-            <input
-              id="recovery-email"
-              type="email"
-              value={email}
-              onChange={(event) => {
-                setEmail(event.target.value);
-
-                if (status === 'error') {
-                  setStatus('idle');
-                  setMessage('');
-                }
-              }}
-              placeholder="you@example.com"
-              autoComplete="email"
-              required
-              maxLength={254}
-            />
+<input
+  id="recovery-email"
+  type="email"
+  value={email}
+  onChange={(event) => {
+    setEmail(event.target.value);
+    setStatus('idle');
+    setMessage('');
+  }}
+  placeholder="you@example.com"
+  autoComplete="email"
+  required
+  maxLength={254}
+/>
 
             <button
               type="submit"
@@ -745,45 +826,45 @@ const verifyRecoveryCode = async (event) => {
                 </p>
 
                 <button
-  type="button"
-  className="recover-submit-button"
-  onClick={() => setCodesSaved(true)}
->
-  I have saved my recovery codes
-</button>
+                  type="button"
+                  className="recover-submit-button"
+                  onClick={() => setCodesSaved(true)}
+                >
+                  I have saved my recovery codes
+                </button>
 
-{codesSaved && (
-  <div className="recover-save-confirmation">
-    <ShieldCheck size={25} />
+                {codesSaved && (
+                  <div className="recover-save-confirmation">
+                    <ShieldCheck size={25} />
 
-    <h3>Confirm your recovery codes</h3>
+                    <h3>Confirm your recovery codes</h3>
 
-    <p>
-      Have you securely saved all ten recovery codes?
-      You will not be able to view these codes again
-      after leaving this page.
-    </p>
+                    <p>
+                      Have you securely saved all ten recovery codes?
+                      You will not be able to view these codes again
+                      after leaving this page.
+                    </p>
 
-    <div className="recover-confirmation-actions">
-      <button
-        type="button"
-        className="recover-not-saved-button"
-        onClick={() => setCodesSaved(false)}
-      >
-        Not saved
-      </button>
+                    <div className="recover-confirmation-actions">
+                      <button
+                        type="button"
+                        className="recover-not-saved-button"
+                        onClick={() => setCodesSaved(false)}
+                      >
+                        Not saved
+                      </button>
 
-      <Link
-        href="/login"
-        className="recover-confirm-continue"
-      >
-        Saved, continue to Login Page
-      </Link>
-    </div>
-  </div>
-)}
+                      <Link
+                        href="/login"
+                        className="recover-confirm-continue"
+                      >
+                        Saved, continue to Login Page
+                      </Link>
+                    </div>
+                  </div>
+                )}
               </>
-                        ) : !(passkeyVerified || recoveryCodeVerified) ? (
+            ) : !(passkeyVerified || recoveryCodeVerified) ? (
 
               /* STEP 1: VERIFY EXISTING PASSKEY OR RECOVERY CODE */
 
@@ -828,43 +909,43 @@ const verifyRecoveryCode = async (event) => {
                   </label>
 
                   <input
-  id="recovery-code"
-  type="text"
-  value={recoveryCode}
-  onChange={(event) => {
-    const value = event.target.value
-      .toUpperCase()
-      .replace(/[^A-F0-9]/g, '')
-      .slice(0, 32);
+                    id="recovery-code"
+                    type="text"
+                    value={recoveryCode}
+                    onChange={(event) => {
+                      const value = event.target.value
+                        .toUpperCase()
+                        .replace(/[^A-F0-9]/g, '')
+                        .slice(0, 32);
 
-    const formatted =
-      value.match(/.{1,4}/g)?.join('-') || '';
+                      const formatted =
+                        value.match(/.{1,4}/g)?.join('-') || '';
 
-    setRecoveryCode(formatted);
-    setRecoveryCodeMessage('');
-  }}
-  onPaste={(event) => {
-    event.preventDefault();
+                      setRecoveryCode(formatted);
+                      setRecoveryCodeMessage('');
+                    }}
+                    onPaste={(event) => {
+                      event.preventDefault();
 
-    const pasted = event.clipboardData
-      .getData('text')
-      .toUpperCase()
-      .replace(/[^A-F0-9]/g, '')
-      .slice(0, 32);
+                      const pasted = event.clipboardData
+                        .getData('text')
+                        .toUpperCase()
+                        .replace(/[^A-F0-9]/g, '')
+                        .slice(0, 32);
 
-    const formatted =
-      pasted.match(/.{1,4}/g)?.join('-') || '';
+                      const formatted =
+                        pasted.match(/.{1,4}/g)?.join('-') || '';
 
-    setRecoveryCode(formatted);
-    setRecoveryCodeMessage('');
-  }}
-  placeholder="XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX"
-  autoComplete="off"
-  spellCheck="false"
-  maxLength={39}
-  required
-  disabled={recoveryCodeLoading}
-/>
+                      setRecoveryCode(formatted);
+                      setRecoveryCodeMessage('');
+                    }}
+                    placeholder="XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX"
+                    autoComplete="off"
+                    spellCheck={false}
+                    maxLength={39}
+                    required
+                    disabled={recoveryCodeLoading}
+                  />
 
                   <button
                     type="submit"
@@ -994,6 +1075,10 @@ const verifyRecoveryCode = async (event) => {
     </main>
   );
 }
+
+// --------------------------------------------------
+// PAGE
+// --------------------------------------------------
 
 export default function RecoverAccountPage() {
   return (
