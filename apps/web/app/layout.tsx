@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react';
+
 import '../src/styles/global.css';
 import { AuthProvider } from '../src/context/AuthContext';
 
@@ -10,7 +12,11 @@ export const metadata = {
   },
 };
 
-export default function RootLayout({ children }) {
+export default function RootLayout({
+  children,
+}: {
+  children: ReactNode;
+}) {
   return (
     <html lang="en">
       <body>
