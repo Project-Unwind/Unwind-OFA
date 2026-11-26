@@ -13,7 +13,8 @@ function Navbar() {
 
   const closeMenu = () => setMenuOpen(false);
 
-  const isActive = (path) => pathname === path ? 'active' : '';
+  const isActive = (path: string): string =>
+    pathname === path ? 'active' : '';
 
   return (
     <header className="ofa-navbar">
