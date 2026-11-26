@@ -1,14 +1,15 @@
-import { ArrowRight } from "lucide-react";
-import "./Button.css";
+import Link from 'next/link';
+import { ArrowRight } from 'lucide-react';
+import './Button.css';
 
 function Button({
   children,
   href,
   onClick,
-  variant = "primary",
+  variant = 'primary',
   icon = false,
-  type = "button",
-  className = "",
+  type = 'button',
+  className = '',
 }) {
   const classes = `ofa-button ofa-button-${variant} ${className}`;
 
@@ -21,9 +22,9 @@ function Button({
 
   if (href) {
     return (
-      <a className={classes} href={href}>
+      <Link className={classes} href={href}>
         {content}
-      </a>
+      </Link>
     );
   }
 

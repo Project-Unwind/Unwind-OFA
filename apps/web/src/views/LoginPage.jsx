@@ -1,5 +1,8 @@
+'use client';
+
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   ArrowLeft,
   ShieldCheck,
@@ -9,11 +12,8 @@ import { startAuthentication } from '@simplewebauthn/browser';
 import { useAuth } from '../context/AuthContext';
 import './LoginPage.css';
 
-const API_BASE_URL =
-  import.meta.env.VITE_API_URL || '';
-
 function LoginPage() {
-  const navigate = useNavigate();
+  const router = useRouter();
   const { refreshSession } = useAuth();
 
   const [loading, setLoading] = useState(false);
@@ -27,7 +27,7 @@ function LoginPage() {
 
     try {
       const optionsResponse = await fetch(
-        `${API_BASE_URL}/api/auth/login/options`,
+        '/api/auth/login/options',
         {
           method: 'POST',
           headers: {
@@ -49,9 +49,11 @@ function LoginPage() {
       const authenticationResponse = await startAuthentication({
         optionsJSON: optionsResult.options,
       });
+      console.log('Passkey ID from browser:', authenticationResponse.id);
+console.log('Passkey rawId from browser:', authenticationResponse.rawId);
 
       const verifyResponse = await fetch(
-        `${API_BASE_URL}/api/auth/login/verify`,
+        '/api/auth/login/verify',
         {
           method: 'POST',
           headers: {
@@ -84,7 +86,7 @@ function LoginPage() {
 
       setMessage('You have successfully signed in.');
 
-      navigate('/dashboard', { replace: true });
+      router.replace('/dashboard');
     } catch (signInError) {
       console.error('Passkey sign-in failed:', signInError);
 
@@ -105,13 +107,13 @@ function LoginPage() {
 
   return (
     <div className="auth-page">
-      <Link to="/" className="auth-back-link">
+      <Link href="/" className="auth-back-link">
         <ArrowLeft size={17} />
         Back to home
       </Link>
 
       <div className="auth-card">
-        <Link to="/" className="auth-brand">
+        <Link href="/" className="auth-brand">
           <span className="auth-brand-icon">
             <ShieldCheck size={23} />
           </span>
@@ -160,7 +162,7 @@ function LoginPage() {
           </button>
 
           <Link
-            to="/recover-account"
+            href="/recover-account"
             className="auth-recovery-link"
           >
             Forgot access? Recover your account
@@ -184,7 +186,7 @@ function LoginPage() {
 
         <p className="auth-switch">
           Don't have an account?{' '}
-          <Link to="/signup">Create one</Link>
+          <Link href="/signup">Create one</Link>
         </p>
 
         <div className="auth-security-note">
@@ -196,7 +198,7 @@ function LoginPage() {
       </div>
 
       <p className="auth-footer">
-        © 2026 Unwind OFA. One identity. One secure ecosystem.
+        &copy; 2026 Unwind OFA. One identity. One secure ecosystem.
       </p>
     </div>
   );

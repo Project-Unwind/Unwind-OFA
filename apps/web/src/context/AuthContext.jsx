@@ -1,3 +1,5 @@
+'use client';
+
 import {
   createContext,
   useContext,
@@ -6,9 +8,6 @@ import {
 } from 'react';
 
 const AuthContext = createContext(null);
-
-const API_BASE_URL =
-  import.meta.env.VITE_API_URL || '';
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
@@ -19,13 +18,10 @@ export function AuthProvider({ children }) {
 
     async function loadSession() {
       try {
-        const response = await fetch(
-          `${API_BASE_URL}/api/auth/session`,
-          {
-            method: 'GET',
-            credentials: 'include',
-          }
-        );
+        const response = await fetch('/api/auth/session', {
+          method: 'GET',
+          credentials: 'include',
+        });
 
         const result = await response.json();
 
@@ -36,9 +32,7 @@ export function AuthProvider({ children }) {
         }
 
         if (mounted) {
-          setUser(
-            result.authenticated ? result.user : null
-          );
+          setUser(result.authenticated ? result.user : null);
         }
       } catch (error) {
         console.error(
@@ -64,46 +58,38 @@ export function AuthProvider({ children }) {
   }, []);
 
   async function refreshSession() {
-  setLoading(true);
+    setLoading(true);
 
-  try {
-    const response = await fetch(
-      `${API_BASE_URL}/api/auth/session`,
-      {
+    try {
+      const response = await fetch('/api/auth/session', {
         method: 'GET',
         credentials: 'include',
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(
+          result.message || 'Unable to refresh your session.'
+        );
       }
-    );
 
-    const result = await response.json();
+      setUser(result.authenticated ? result.user : null);
 
-    if (!response.ok || !result.success) {
-      throw new Error(
-        result.message || 'Unable to refresh your session.'
-      );
+      return result;
+    } catch (error) {
+      setUser(null);
+      throw error;
+    } finally {
+      setLoading(false);
     }
-
-    setUser(
-      result.authenticated ? result.user : null
-    );
-
-    return result;
-  } catch (error) {
-    setUser(null);
-    throw error;
-  } finally {
-    setLoading(false);
   }
-}
 
   async function signOut() {
-    const response = await fetch(
-      `${API_BASE_URL}/api/auth/logout`,
-      {
-        method: 'POST',
-        credentials: 'include',
-      }
-    );
+    const response = await fetch('/api/auth/logout', {
+      method: 'POST',
+      credentials: 'include',
+    });
 
     const result = await response.json();
 

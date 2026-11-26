@@ -1,5 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+'use client';
+
+import { useEffect, useRef, useState, Suspense } from 'react';
+import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   startAuthentication,
   startRegistration,
@@ -15,8 +18,9 @@ import {
 } from 'lucide-react';
 import './RecoverAccountPage.css';
 
-function RecoverAccountPage() {
-  const [searchParams, setSearchParams] = useSearchParams();
+function RecoverAccountContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const urlToken = searchParams.get('token');
 
   const [email, setEmail] = useState('');
@@ -102,7 +106,7 @@ function RecoverAccountPage() {
           'Your email has been verified. Now verify your existing passkey.'
         );
 
-        setSearchParams({}, { replace: true });
+        router.replace('/recover-account', { scroll: false });
       } catch (error) {
         setStatus('error');
         setMessage(
@@ -110,12 +114,12 @@ function RecoverAccountPage() {
             'Unable to verify your recovery link.'
         );
 
-        setSearchParams({}, { replace: true });
+        router.replace('/recover-account', { scroll: false });
       }
     }
 
     verifyRecoveryEmail();
-  }, [urlToken, setSearchParams]);
+  }, [urlToken, router]);
 
   // --------------------------------------------------
   // REQUEST ACCOUNT RECOVERY
@@ -545,13 +549,13 @@ const verifyRecoveryCode = async (event) => {
 
   return (
     <main className="recover-account-page">
-      <Link to="/login" className="recover-back-link">
+      <Link href="/login" className="recover-back-link">
         <ArrowLeft size={17} />
         Back to sign in
       </Link>
 
       <section className="recover-account-card">
-        <Link to="/" className="recover-account-brand">
+        <Link href="/" className="recover-account-brand">
           <span className="recover-brand-icon">
             <ShieldCheck size={23} />
           </span>
@@ -689,7 +693,7 @@ const verifyRecoveryCode = async (event) => {
 
         {status === 'sent' && (
           <Link
-            to="/login"
+            href="/login"
             className="recover-secondary-link"
           >
             Return to sign in
@@ -770,7 +774,7 @@ const verifyRecoveryCode = async (event) => {
       </button>
 
       <Link
-        to="/login"
+        href="/login"
         className="recover-confirm-continue"
       >
         Saved, continue to Login Page
@@ -966,7 +970,7 @@ const verifyRecoveryCode = async (event) => {
         {(status === 'verified' || status === 'error') &&
           !recoveryCompleted && (
             <Link
-              to="/login"
+              href="/login"
               className="recover-secondary-link"
             >
               Return to sign in
@@ -991,4 +995,18 @@ const verifyRecoveryCode = async (event) => {
   );
 }
 
-export default RecoverAccountPage;
+export default function RecoverAccountPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="recover-account-page">
+          <section className="recover-account-card">
+            Verifying recovery link...
+          </section>
+        </main>
+      }
+    >
+      <RecoverAccountContent />
+    </Suspense>
+  );
+}

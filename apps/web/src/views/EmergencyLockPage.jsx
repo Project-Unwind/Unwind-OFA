@@ -1,10 +1,13 @@
-import { useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+'use client';
+
+import { useState, Suspense } from 'react';
+import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { ShieldAlert, ShieldCheck, LockKeyhole } from 'lucide-react';
 import './EmergencyLockPage.css';
 
-function EmergencyLockPage() {
-  const [searchParams] = useSearchParams();
+function EmergencyLockContent() {
+  const searchParams = useSearchParams();
   const token = searchParams.get('token');
 
   const [loading, setLoading] = useState(false);
@@ -31,7 +34,8 @@ function EmergencyLockPage() {
 
       if (!response.ok) {
         throw new Error(
-          data.message || 'Unable to secure your account. The link may have expired or already been used.'
+          data.message ||
+            'Unable to secure your account. The link may have expired or already been used.'
         );
       }
 
@@ -68,15 +72,13 @@ function EmergencyLockPage() {
 
             <p className="emergency-lock-eyebrow">ACCOUNT SECURED</p>
             <h1>Your account is locked.</h1>
-            <p className="emergency-lock-description">
-              {message}
-            </p>
+            <p className="emergency-lock-description">{message}</p>
             <p className="emergency-lock-note">
               Passkey sign-ins are now blocked. Contact the account
               recovery process before attempting to access your account.
             </p>
 
-            <Link to="/" className="emergency-lock-link">
+            <Link href="/" className="emergency-lock-link">
               Return to Unwind OFA
             </Link>
           </div>
@@ -133,7 +135,7 @@ function EmergencyLockPage() {
               </>
             )}
 
-            <Link to="/" className="emergency-lock-link">
+            <Link href="/" className="emergency-lock-link">
               Return to Unwind OFA
             </Link>
           </div>
@@ -143,4 +145,18 @@ function EmergencyLockPage() {
   );
 }
 
-export default EmergencyLockPage;
+export default function EmergencyLockPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="emergency-lock-page">
+          <section className="emergency-lock-card">
+            Verifying security link...
+          </section>
+        </main>
+      }
+    >
+      <EmergencyLockContent />
+    </Suspense>
+  );
+}

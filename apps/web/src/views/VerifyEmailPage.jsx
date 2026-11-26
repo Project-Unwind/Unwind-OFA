@@ -1,5 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+'use client';
+
+import { useEffect, useRef, useState, Suspense } from 'react';
+import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import {
   ShieldCheck,
   CheckCircle2,
@@ -8,8 +11,8 @@ import {
 } from 'lucide-react';
 import './VerifyEmailPage.css';
 
-function VerifyEmailPage() {
-  const [searchParams] = useSearchParams();
+function VerifyEmailContent() {
+  const searchParams = useSearchParams();
   const token = searchParams.get('token');
 
   const [status, setStatus] = useState('loading');
@@ -67,7 +70,7 @@ function VerifyEmailPage() {
   return (
     <main className="verify-email-page">
       <section className="verify-email-card">
-        <Link to="/" className="verify-email-brand">
+        <Link href="/" className="verify-email-brand">
           <span className="verify-email-brand-icon">
             <ShieldCheck size={23} />
           </span>
@@ -98,7 +101,7 @@ function VerifyEmailPage() {
         </div>
 
         {status !== 'loading' && (
-          <Link to="/login" className="verify-email-button">
+          <Link href="/login" className="verify-email-button">
             Continue to sign in
           </Link>
         )}
@@ -111,4 +114,18 @@ function VerifyEmailPage() {
   );
 }
 
-export default VerifyEmailPage;
+export default function VerifyEmailPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="verify-email-page">
+          <section className="verify-email-card">
+            Verifying your email address...
+          </section>
+        </main>
+      }
+    >
+      <VerifyEmailContent />
+    </Suspense>
+  );
+}

@@ -1,10 +1,20 @@
-import { Navigate, Outlet } from 'react-router-dom';
+'use client';
+
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '../context/AuthContext';
 
-function ProtectedRoute() {
+function ProtectedRoute({ children }) {
+  const router = useRouter();
   const { isAuthenticated, loading } = useAuth();
 
-  if (loading) {
+  useEffect(() => {
+    if (!loading && !isAuthenticated) {
+      router.replace('/login');
+    }
+  }, [loading, isAuthenticated, router]);
+
+  if (loading || !isAuthenticated) {
     return (
       <div className="auth-loading">
         <p>Verifying your identity...</p>
@@ -12,11 +22,7 @@ function ProtectedRoute() {
     );
   }
 
-  if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
-  }
-
-  return <Outlet />;
+  return children;
 }
 
 export default ProtectedRoute;

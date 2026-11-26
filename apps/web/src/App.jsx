@@ -3,15 +3,15 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 
 import MainLayout from './layouts/MainLayout';
-import HomePage from './pages/HomePage';
-import LoginPage from './pages/LoginPage';
-import SignupPage from './pages/SignupPage';
-import VerifyEmailPage from './pages/VerifyEmailPage';
-import DashboardPage from './pages/DashboardPage';
+import HomePage from './views/HomePage';
+import LoginPage from './views/LoginPage';
+import SignupPage from './views/SignupPage';
+import VerifyEmailPage from './views/VerifyEmailPage';
+import DashboardPage from './views/DashboardPage';
 import ProtectedRoute from './components/ProtectedRoute';
-import NotFoundPage from './pages/NotFoundPage';
-import EmergencyLockPage from './pages/EmergencyLockPage';
-import RecoverAccountPage from './pages/RecoverAccountPage';
+import NotFoundPage from './views/NotFoundPage';
+import EmergencyLockPage from './views/EmergencyLockPage';
+import RecoverAccountPage from './views/RecoverAccountPage';
 
 function App() {
   return (

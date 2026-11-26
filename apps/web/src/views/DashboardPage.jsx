@@ -1,3 +1,5 @@
+'use client';
+
 import { useAuth } from '../context/AuthContext';
 import { ShieldCheck, LockKeyhole, Fingerprint, LogOut } from 'lucide-react';
 import './DashboardPage.css';

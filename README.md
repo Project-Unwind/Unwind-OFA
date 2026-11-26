@@ -160,14 +160,15 @@ Create the following environment files.
 
 ```env
 PORT=4000
-FRONTEND_URL=http://localhost:5173
+FRONTEND_URL=http://localhost:3000
 
 SUPABASE_URL=your_supabase_url
 SUPABASE_SECRET_KEY=your_supabase_secret_key
 
 RP_NAME=Unwind OFA
 RP_ID=localhost
-EXPECTED_ORIGIN=http://localhost:5173
+EXPECTED_ORIGIN=http://localhost:3000
+
 
 BREVO_API_KEY=your_brevo_api_key
 BREVO_SENDER_EMAIL=your_verified_sender_email

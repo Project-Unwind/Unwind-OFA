@@ -1,5 +1,7 @@
+'use client';
+
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import Link from 'next/link';
 import {
   ArrowLeft,
   ShieldCheck,
@@ -7,9 +9,6 @@ import {
 } from 'lucide-react';
 import { startRegistration } from '@simplewebauthn/browser';
 import './SignupPage.css';
-
-const API_BASE_URL =
-  import.meta.env.VITE_API_URL || '';
 
 function SignupPage() {
   const [fullName, setFullName] = useState('');
@@ -29,7 +28,7 @@ function SignupPage() {
 
     try {
       const response = await fetch(
-        `${API_BASE_URL}/api/auth/register/options`,
+        '/api/auth/register/options',
         {
           method: 'POST',
           headers: {
@@ -86,7 +85,7 @@ function SignupPage() {
       });
 
       const response = await fetch(
-        `${API_BASE_URL}/api/auth/register/verify`,
+        '/api/auth/register/verify',
         {
           method: 'POST',
           headers: {
@@ -142,13 +141,13 @@ function SignupPage() {
 
   return (
     <div className="signup-page">
-      <Link to="/" className="signup-back-link">
+      <Link href="/" className="signup-back-link">
         <ArrowLeft size={17} />
         Back to home
       </Link>
 
       <div className="signup-card">
-        <Link to="/" className="signup-brand">
+        <Link href="/" className="signup-brand">
           <span className="signup-brand-icon">
             <ShieldCheck size={23} />
           </span>
@@ -190,7 +189,7 @@ function SignupPage() {
               'Create your Unwind OFA identity using your name, email address and a passkey.'}
 
             {step === 'passkey' &&
-              'Register using your device’s built-in authentication. Your device may use fingerprint recognition, Face ID, Windows Hello, or another supported screen-lock verification method.'}
+              "Register using your device's built-in authentication. Your device may use fingerprint recognition, Face ID, Windows Hello, or another supported screen-lock verification method."}
 
             {step === 'complete' &&
               'Your Unwind OFA identity and passkey have been successfully registered.'}
@@ -238,8 +237,8 @@ function SignupPage() {
 
               <span>
                 I agree to the{' '}
-                <Link to="/terms">Terms of Service</Link> and{' '}
-                <Link to="/privacy">Privacy Policy</Link>.
+                <Link href="/terms">Terms of Service</Link> and{' '}
+                <Link href="/privacy">Privacy Policy</Link>.
               </span>
             </label>
 
@@ -301,7 +300,10 @@ function SignupPage() {
               by Unwind OFA.
             </p>
 
-            <Link to="/login" className="signup-submit-button">
+            <Link
+              href="/login"
+              className="signup-submit-button"
+            >
               Sign in with your passkey
             </Link>
           </div>
@@ -325,7 +327,7 @@ function SignupPage() {
         {step !== 'complete' && (
           <p className="signup-switch">
             Already have an account?{' '}
-            <Link to="/login">Sign in</Link>
+            <Link href="/login">Sign in</Link>
           </p>
         )}
 
@@ -339,7 +341,7 @@ function SignupPage() {
       </div>
 
       <p className="signup-footer">
-        © 2026 Unwind OFA. Built for a safer digital life.
+        &copy; 2026 Unwind OFA. Built for a safer digital life.
       </p>
     </div>
   );
