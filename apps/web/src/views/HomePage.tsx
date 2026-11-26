@@ -8,12 +8,21 @@ import {
   LockKeyhole,
   Check,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 
 import Link from 'next/link';
 import Button from '../components/Button';
 import './HomePage.css';
 
-const products = [
+interface Product {
+  number: string;
+  icon: LucideIcon;
+  tag: string;
+  title: string;
+  description: string;
+}
+
+const products: Product[] = [
   {
     number: '01',
     icon: Fingerprint,
