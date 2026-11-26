@@ -1,17 +1,25 @@
 'use client';
 
 import { useAuth } from '../context/AuthContext';
-import { ShieldCheck, LockKeyhole, Fingerprint, LogOut } from 'lucide-react';
+import {
+  ShieldCheck,
+  LockKeyhole,
+  Fingerprint,
+  LogOut,
+} from 'lucide-react';
 import './DashboardPage.css';
 
 function DashboardPage() {
   const { user, signOut } = useAuth();
 
-  async function handleSignOut() {
+  async function handleSignOut(): Promise<void> {
     try {
       await signOut();
-    } catch (error) {
-      console.error('Sign out failed:', error.message);
+    } catch (error: unknown) {
+      console.error(
+        'Sign out failed:',
+        error instanceof Error ? error.message : error
+      );
     }
   }
 
