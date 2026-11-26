@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import {
   ArrowLeft,
@@ -10,16 +10,47 @@ import {
 import { startRegistration } from '@simplewebauthn/browser';
 import './SignupPage.css';
 
+type SignupStep = 'details' | 'passkey' | 'complete';
+
+type RegistrationOptions =
+  Parameters<typeof startRegistration>[0]['optionsJSON'];
+
+interface RegistrationState {
+  userId: string;
+  challengeId: string;
+  options: RegistrationOptions;
+}
+
+interface RegistrationOptionsResponse {
+  success: boolean;
+  message?: string;
+  userId: string;
+  challengeId: string;
+  options: RegistrationOptions;
+}
+
+interface RegistrationVerifyResponse {
+  success: boolean;
+  message?: string;
+}
+
+function getErrorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
+}
+
 function SignupPage() {
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
-  const [step, setStep] = useState('details');
+  const [step, setStep] = useState<SignupStep>('details');
   const [loading, setLoading] = useState(false);
-  const [registration, setRegistration] = useState(null);
+  const [registration, setRegistration] =
+    useState<RegistrationState | null>(null);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
-  const requestRegistrationOptions = async (event) => {
+  const requestRegistrationOptions = async (
+    event: FormEvent<HTMLFormElement>
+  ): Promise<void> => {
     event.preventDefault();
 
     setLoading(true);
@@ -27,21 +58,19 @@ function SignupPage() {
     setMessage('');
 
     try {
-      const response = await fetch(
-        '/api/auth/register/options',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            displayName: fullName.trim(),
-            email: email.trim().toLowerCase(),
-          }),
-        }
-      );
+      const response = await fetch('/api/auth/register/options', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          displayName: fullName.trim(),
+          email: email.trim().toLowerCase(),
+        }),
+      });
 
-      const result = await response.json();
+      const result =
+        (await response.json()) as RegistrationOptionsResponse;
 
       if (!response.ok || !result.success) {
         throw new Error(
@@ -59,17 +88,19 @@ function SignupPage() {
       setMessage(
         'Your identity is ready. Register a passkey to continue.'
       );
-    } catch (requestError) {
+    } catch (requestError: unknown) {
       setError(
-        requestError.message ||
+        getErrorMessage(
+          requestError,
           'Unable to connect to the Unwind OFA server.'
+        )
       );
     } finally {
       setLoading(false);
     }
   };
 
-  const registerPasskey = async () => {
+  const registerPasskey = async (): Promise<void> => {
     if (!registration) {
       setError('Registration details are missing. Please try again.');
       return;
@@ -84,22 +115,20 @@ function SignupPage() {
         optionsJSON: registration.options,
       });
 
-      const response = await fetch(
-        '/api/auth/register/verify',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            userId: registration.userId,
-            challengeId: registration.challengeId,
-            response: credential,
-          }),
-        }
-      );
+      const response = await fetch('/api/auth/register/verify', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId: registration.userId,
+          challengeId: registration.challengeId,
+          response: credential,
+        }),
+      });
 
-      const result = await response.json();
+      const result =
+        (await response.json()) as RegistrationVerifyResponse;
 
       if (!response.ok || !result.success) {
         throw new Error(
@@ -111,20 +140,25 @@ function SignupPage() {
       setMessage(
         'Your Unwind OFA passkey has been registered successfully.'
       );
-    } catch (registrationError) {
+    } catch (registrationError: unknown) {
       console.error(
         'Passkey registration failed:',
         registrationError
       );
 
-      if (registrationError.name === 'NotAllowedError') {
+      if (
+        registrationError instanceof Error &&
+        registrationError.name === 'NotAllowedError'
+      ) {
         setError(
           'Passkey registration was cancelled or not allowed. Please try again.'
         );
       } else {
         setError(
-          registrationError.message ||
+          getErrorMessage(
+            registrationError,
             'Unable to register your passkey. Please try again.'
+          )
         );
       }
     } finally {
@@ -132,7 +166,7 @@ function SignupPage() {
     }
   };
 
-  const restartRegistration = () => {
+  const restartRegistration = (): void => {
     setRegistration(null);
     setStep('details');
     setError('');
