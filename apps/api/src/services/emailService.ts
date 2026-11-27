@@ -1,10 +1,18 @@
+interface SendBrevoEmailParams {
+  toEmail: string;
+  toName: string;
+  subject: string;
+  htmlContent: string;
+  textContent: string;
+}
+
 async function sendBrevoEmail({
   toEmail,
   toName,
   subject,
   htmlContent,
   textContent,
-}) {
+}: SendBrevoEmailParams): Promise<unknown> {
   const apiKey = process.env.BREVO_API_KEY;
   const senderEmail = process.env.BREVO_SENDER_EMAIL;
   const senderName =
@@ -56,4 +64,4 @@ async function sendBrevoEmail({
   return response.json();
 }
 
-module.exports = { sendBrevoEmail };
+export { sendBrevoEmail };
