@@ -1,4 +1,10 @@
-import express, { type Request, type Response, type NextFunction } from 'express';
+
+import express, {
+  type Request,
+  type Response,
+  type NextFunction,
+} from 'express';
+
 import rateLimit from 'express-rate-limit';
 
 import {
@@ -23,7 +29,7 @@ import {
 const router = express.Router();
 
 const TRUSTED_FRONTEND_ORIGIN = new URL(
-  process.env.FRONTEND_URL || 'http://localhost:5173'
+  process.env.FRONTEND_URL || 'http://localhost:3000'
 ).origin;
 
 // Reject cookie-authenticated requests from untrusted origins.

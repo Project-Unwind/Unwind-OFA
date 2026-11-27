@@ -1,22 +1,32 @@
-const {
+import {
   randomUUID,
   randomBytes,
   createHash,
-} = require('node:crypto');
+} from 'node:crypto';
 
-const { z } = require('zod');
+import type { Request, Response } from 'express';
 
-const {
+import { z } from 'zod';
+
+import {
   generateRegistrationOptions,
   verifyRegistrationResponse,
   generateAuthenticationOptions,
   verifyAuthenticationResponse,
-} = require('@simplewebauthn/server');
+} from '@simplewebauthn/server';
 
-const { supabase } = require('../config/supabase');
-const { webauthnConfig } = require('../config/webauthn');
+import { supabase } from '../config/supabase';
+import { webauthnConfig } from '../config/webauthn';
+import { sendBrevoEmail } from '../services/emailService';
 
-const { sendBrevoEmail } = require('../services/emailService');
+import type {
+  RegistrationResponseJSON,
+  AuthenticationResponseJSON,
+} from '@simplewebauthn/server';
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 const SESSION_DURATION_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -32,7 +42,7 @@ const sessionCookieOptions = {
   sameSite: 'lax',
   path: '/',
   maxAge: SESSION_DURATION_MS,
-};
+}as const;
 
 const optionsSchema = z.object({
   displayName: z.string().trim().min(2).max(60),
@@ -41,7 +51,7 @@ const optionsSchema = z.object({
     .trim()
     .email('Please provide a valid email address.')
     .max(254)
-    .transform((value) => value.toLowerCase()),
+    .transform((value: string) => value.toLowerCase()),
 });
 
 const verifySchema = z.object({
@@ -65,7 +75,7 @@ const emergencyLockSchema = z.object({
 
 const recoveryStartSchema = z.object({
   email: z.string().trim().email().max(254)
-    .transform((value) => value.toLowerCase()),
+    .transform((value: string) => value.toLowerCase()),
 });
 
 const recoveryEmailVerifySchema = z.object({
@@ -108,7 +118,7 @@ const recoveryCompletionSchema = z.object({
   recoveryToken: z.string().min(40).max(100),
 });
 
-async function deletePendingUser(userId) {
+async function deletePendingUser(userId: string): Promise<void> {
   try {
     await supabase
       .from('ofa_users')
@@ -118,7 +128,7 @@ async function deletePendingUser(userId) {
   } catch (error) {
     console.error(
       'Pending user cleanup failed:',
-      error.message
+      getErrorMessage(error)
     );
   }
 }
@@ -127,7 +137,7 @@ async function deletePendingUser(userId) {
 // REGISTRATION
 // --------------------------------------------------
 
-async function registerOptions(req, res) {
+async function registerOptions(req: Request, res: Response) {
   const parsed = optionsSchema.safeParse(req.body);
 
   if (!parsed.success) {
@@ -233,7 +243,7 @@ const email = parsed.data.email;
   } catch (error) {
     console.error(
       'Registration options error:',
-      error.message
+      getErrorMessage(error)
     );
 
     await deletePendingUser(userId);
@@ -245,7 +255,7 @@ const email = parsed.data.email;
   }
 }
 
-async function registerVerify(req, res) {
+async function registerVerify(req: Request, res: Response) {
   const parsed = verifySchema.safeParse(req.body);
 
   if (!parsed.success) {
@@ -319,8 +329,7 @@ async function registerVerify(req, res) {
 
     try {
       verification = await verifyRegistrationResponse({
-        response,
-        expectedChallenge: challengeRecord.challenge,
+response: response as unknown as RegistrationResponseJSON,        expectedChallenge: challengeRecord.challenge,
         expectedOrigin: webauthnConfig.expectedOrigin,
         expectedRPID: webauthnConfig.rpID,
         requireUserVerification: true,
@@ -328,7 +337,7 @@ async function registerVerify(req, res) {
     } catch (verificationError) {
       console.warn(
         'Passkey registration verification rejected:',
-        verificationError.message
+        getErrorMessage(verificationError)
       );
 
       return res.status(400).json({
@@ -374,8 +383,8 @@ async function registerVerify(req, res) {
 
     const transports = Array.isArray(credential.transports)
       ? credential.transports.filter(
-          (transport) => typeof transport === 'string'
-        )
+  (transport: string) => typeof transport === 'string'
+)
       : [];
 
     const {
@@ -504,7 +513,7 @@ This link expires in 30 minutes and can only be used once.
   // Do not undo successful passkey registration.
   console.error(
     'Registration verification email failed:',
-    emailError.message
+    getErrorMessage(emailError)
   );
 }
 
@@ -519,7 +528,7 @@ This link expires in 30 minutes and can only be used once.
   } catch (error) {
     console.error(
       'Registration verification error:',
-      error.message
+      getErrorMessage(error)
     );
 
     return res.status(500).json({
@@ -529,7 +538,7 @@ This link expires in 30 minutes and can only be used once.
   }
 }
 
-async function verifyEmail(req, res) {
+async function verifyEmail(req: Request, res: Response) {
   const parsed = emailVerificationSchema.safeParse(req.body);
 
   if (!parsed.success) {
@@ -626,7 +635,7 @@ Security reminder: Never share your passkey or account recovery codes with anyon
     } catch (emailError) {
       console.error(
         'Account confirmation email failed:',
-        emailError.message
+        getErrorMessage(emailError)
       );
     }
 
@@ -637,7 +646,7 @@ Security reminder: Never share your passkey or account recovery codes with anyon
   } catch (error) {
     console.error(
       'Email verification error:',
-      error.message
+      getErrorMessage(error)
     );
 
     return res.status(500).json({
@@ -651,7 +660,7 @@ Security reminder: Never share your passkey or account recovery codes with anyon
 // PASSKEY SIGN-IN
 // --------------------------------------------------
 
-async function loginOptions(_req, res) {
+async function loginOptions(_req: Request, res: Response) {
   try {
     // Generate discoverable passkey authentication options.
     const options = await generateAuthenticationOptions({
@@ -699,7 +708,7 @@ async function loginOptions(_req, res) {
   } catch (error) {
     console.error(
       'Authentication options error:',
-      error.message
+      getErrorMessage(error)
     );
 
     return res.status(500).json({
@@ -709,7 +718,7 @@ async function loginOptions(_req, res) {
   }
 }
 
-async function loginVerify(req, res) {
+async function loginVerify(req: Request, res: Response) {
   const parsed = loginVerifySchema.safeParse(req.body);
 
   if (!parsed.success) {
@@ -881,8 +890,7 @@ async function loginVerify(req, res) {
 
     try {
       verification = await verifyAuthenticationResponse({
-        response,
-        expectedChallenge: challengeRecord.challenge,
+response: response as unknown as AuthenticationResponseJSON,        expectedChallenge: challengeRecord.challenge,
         expectedOrigin: webauthnConfig.expectedOrigin,
         expectedRPID: webauthnConfig.rpID,
 
@@ -901,7 +909,7 @@ async function loginVerify(req, res) {
     } catch (verificationError) {
       console.warn(
         'Passkey authentication rejected:',
-        verificationError.message
+        getErrorMessage(verificationError)
       );
 
       return res.status(401).json({
@@ -1020,7 +1028,7 @@ try {
 } catch (tokenError) {
   console.error(
     'Emergency token generation failed:',
-    tokenError.message
+    getErrorMessage(tokenError)
   );
 }
 
@@ -1091,7 +1099,7 @@ If you recognize this sign-in, no action is necessary.
     } catch (emailError) {
       console.error(
         'Login security notification failed:',
-        emailError.message
+        getErrorMessage(emailError)
       );
     }
 
@@ -1106,7 +1114,7 @@ If you recognize this sign-in, no action is necessary.
   } catch (error) {
     console.error(
       'Passkey authentication error:',
-      error.message
+      getErrorMessage(error)
     );
 
     return res.status(500).json({
@@ -1116,10 +1124,10 @@ If you recognize this sign-in, no action is necessary.
   }
 }
 
-function getSessionToken(req) {
+function getSessionToken(req: Request): string | null {
   const cookies = (req.headers.cookie || '').split(';');
 
-  const sessionCookie = cookies.find((cookie) =>
+  const sessionCookie = cookies.find((cookie: string) =>
     cookie.trim().startsWith(`${SESSION_COOKIE_NAME}=`)
   );
 
@@ -1138,7 +1146,7 @@ function getSessionToken(req) {
   }
 }
 
-function clearSessionCookie(res) {
+function clearSessionCookie(res: Response): void {
   res.clearCookie(SESSION_COOKIE_NAME, {
     httpOnly: true,
     secure: isProduction,
@@ -1151,7 +1159,7 @@ function clearSessionCookie(res) {
 // SESSION VALIDATION
 // --------------------------------------------------
 
-async function getSession(req, res) {
+async function getSession(req: Request, res: Response) {
   const sessionToken = getSessionToken(req);
 
   if (!sessionToken) {
@@ -1269,7 +1277,7 @@ async function getSession(req, res) {
   } catch (error) {
     console.error(
       'Session validation error:',
-      error.message
+      getErrorMessage(error)
     );
 
     return res.status(500).json({
@@ -1283,7 +1291,7 @@ async function getSession(req, res) {
 // LOGOUT
 // --------------------------------------------------
 
-async function logout(req, res) {
+async function logout(req: Request, res: Response) {
   const sessionToken = getSessionToken(req);
 
   if (!sessionToken) {
@@ -1329,7 +1337,7 @@ async function logout(req, res) {
   } catch (error) {
     console.error(
       'Logout error:',
-      error.message
+      getErrorMessage(error)
     );
 
     return res.status(500).json({
@@ -1339,7 +1347,7 @@ async function logout(req, res) {
   }
 }
 
-async function emergencyLock(req, res) {
+async function emergencyLock(req: Request, res: Response) {
   const parsed = emergencyLockSchema.safeParse(req.body);
 
   if (!parsed.success) {
@@ -1384,7 +1392,7 @@ async function emergencyLock(req, res) {
   } catch (error) {
     console.error(
       'Emergency lockdown error:',
-      error.message
+      getErrorMessage(error)
     );
 
     return res.status(500).json({
@@ -1398,7 +1406,7 @@ async function emergencyLock(req, res) {
 // ACCOUNT RECOVERY — EMAIL VERIFICATION
 // --------------------------------------------------
 
-async function startRecovery(req, res) {
+async function startRecovery(req: Request, res: Response) {
   const parsed = recoveryStartSchema.safeParse(req.body);
 
   if (!parsed.success) {
@@ -1431,7 +1439,7 @@ async function startRecovery(req, res) {
     if (error) {
       console.error(
         'Recovery initiation failed:',
-        error.message
+        getErrorMessage(error)
       );
 
       return res.status(500).json({
@@ -1504,7 +1512,7 @@ If you did not request account recovery, ignore this email.
       } catch (emailError) {
         console.error(
           'Recovery email delivery failed:',
-          emailError.message
+          getErrorMessage(emailError)
         );
 
         // Do not reveal account existence through email errors.
@@ -1518,7 +1526,7 @@ If you did not request account recovery, ignore this email.
   } catch (error) {
     console.error(
       'Recovery initiation error:',
-      error.message
+      getErrorMessage(error)
     );
 
     return res.status(500).json({
@@ -1528,7 +1536,7 @@ If you did not request account recovery, ignore this email.
   }
 }
 
-async function verifyRecoveryEmail(req, res) {
+async function verifyRecoveryEmail(req: Request, res: Response) {
   const parsed = recoveryEmailVerifySchema.safeParse(req.body);
 
   if (!parsed.success) {
@@ -1565,7 +1573,7 @@ async function verifyRecoveryEmail(req, res) {
     if (error) {
       console.error(
         'Recovery email verification failed:',
-        error.message
+        getErrorMessage(error)
       );
 
       return res.status(500).json({
@@ -1589,7 +1597,7 @@ async function verifyRecoveryEmail(req, res) {
   } catch (error) {
     console.error(
       'Recovery email verification error:',
-      error.message
+      getErrorMessage(error)
     );
 
     return res.status(500).json({
@@ -1599,7 +1607,7 @@ async function verifyRecoveryEmail(req, res) {
   }
 }
 
-async function verifyRecoveryCode(req, res) {
+async function verifyRecoveryCode(req: Request, res: Response) {
   const parsed = recoveryCodeVerifySchema.safeParse(req.body);
 
   if (!parsed.success) {
@@ -1630,7 +1638,7 @@ async function verifyRecoveryCode(req, res) {
       if (error) {
         console.error(
           'Recovery code verification failed:',
-          error.message
+          getErrorMessage(error)
         );
       }
 
@@ -1647,7 +1655,7 @@ async function verifyRecoveryCode(req, res) {
   } catch (error) {
     console.error(
       'Recovery code verification error:',
-      error.message
+      getErrorMessage(error)
     );
 
     return res.status(500).json({
@@ -1657,7 +1665,7 @@ async function verifyRecoveryCode(req, res) {
   }
 }
 
-async function recoveryAuthenticationOptions(req, res) {
+async function recoveryAuthenticationOptions(req: Request, res: Response) {
   const parsed = recoveryAuthenticationOptionsSchema.safeParse(
     req.body
   );
@@ -1752,7 +1760,10 @@ async function recoveryAuthenticationOptions(req, res) {
       rpID: webauthnConfig.rpID,
       userVerification: 'required',
       timeout: 60000,
-      allowCredentials: credentials.map((credential) => ({
+      allowCredentials: credentials.map((credential: {
+  credential_id: string;
+  transports: string[] | null;
+}) => ({
         id: credential.credential_id,
         transports: credential.transports || [],
       })),
@@ -1796,7 +1807,7 @@ async function recoveryAuthenticationOptions(req, res) {
   } catch (error) {
     console.error(
       'Recovery authentication options error:',
-      error.message
+      getErrorMessage(error)
     );
 
     return res.status(500).json({
@@ -1806,7 +1817,7 @@ async function recoveryAuthenticationOptions(req, res) {
   }
 }
 
-async function verifyRecoveryPasskey(req, res) {
+async function verifyRecoveryPasskey(req: Request, res: Response) {
   const parsed = recoveryAuthenticationVerifySchema.safeParse(
     req.body
   );
@@ -1977,8 +1988,7 @@ if (
 
     try {
       verification = await verifyAuthenticationResponse({
-        response,
-        expectedChallenge: challengeRecord.challenge,
+response: response as unknown as AuthenticationResponseJSON,        expectedChallenge: challengeRecord.challenge,
         expectedOrigin: webauthnConfig.expectedOrigin,
         expectedRPID: webauthnConfig.rpID,
 
@@ -1997,7 +2007,7 @@ if (
     } catch (verificationError) {
       console.warn(
         'Recovery passkey verification rejected:',
-        verificationError.message
+        getErrorMessage(verificationError)
       );
 
       return res.status(401).json({
@@ -2065,7 +2075,7 @@ if (
   } catch (error) {
     console.error(
       'Recovery passkey verification error:',
-      error.message
+      getErrorMessage(error)
     );
 
     return res.status(500).json({
@@ -2076,7 +2086,7 @@ if (
 }
 
 
-async function recoveryRegistrationOptions(req, res) {
+async function recoveryRegistrationOptions(req: Request, res: Response) {
   const parsed = recoveryRegistrationOptionsSchema.safeParse(req.body);
 
   if (!parsed.success) {
@@ -2198,7 +2208,7 @@ const options = await generateRegistrationOptions({
   } catch (error) {
     console.error(
       'Recovery registration options error:',
-      error.message
+      getErrorMessage(error)
     );
 
     return res.status(500).json({
@@ -2208,7 +2218,7 @@ const options = await generateRegistrationOptions({
   }
 }
 
-async function verifyRecoveryRegistration(req, res) {
+async function verifyRecoveryRegistration(req: Request, res: Response) {
   const parsed = recoveryRegistrationVerifySchema.safeParse(req.body);
 
   if (!parsed.success) {
@@ -2300,8 +2310,7 @@ async function verifyRecoveryRegistration(req, res) {
 
     try {
       verification = await verifyRegistrationResponse({
-        response,
-        expectedChallenge: challengeRecord.challenge,
+response: response as unknown as RegistrationResponseJSON,        expectedChallenge: challengeRecord.challenge,
         expectedOrigin: webauthnConfig.expectedOrigin,
         expectedRPID: webauthnConfig.rpID,
         requireUserVerification: true,
@@ -2309,7 +2318,7 @@ async function verifyRecoveryRegistration(req, res) {
     } catch (verificationError) {
       console.warn(
         'Replacement passkey verification rejected:',
-        verificationError.message
+        getErrorMessage(verificationError)
       );
 
       return res.status(400).json({
@@ -2352,8 +2361,8 @@ async function verifyRecoveryRegistration(req, res) {
 
     const transports = Array.isArray(credential.transports)
       ? credential.transports.filter(
-          (transport) => typeof transport === 'string'
-        )
+  (transport: string) => typeof transport === 'string'
+)
       : [];
 
     const { data: recoveryRecords, error: recoveryError } =
@@ -2390,7 +2399,7 @@ async function verifyRecoveryRegistration(req, res) {
   } catch (error) {
     console.error(
       'Replacement passkey registration error:',
-      error.message
+      getErrorMessage(error)
     );
 
     return res.status(500).json({
@@ -2400,7 +2409,7 @@ async function verifyRecoveryRegistration(req, res) {
   }
 }
 
-async function completeRecovery(req, res) {
+async function completeRecovery(req: Request, res: Response) {
   const parsed = recoveryCompletionSchema.safeParse(req.body);
 
   if (!parsed.success) {
@@ -2424,7 +2433,7 @@ async function completeRecovery(req, res) {
           .toString('hex')
           .toUpperCase();
 
-        return rawCode.match(/.{1,4}/g).join('-');
+        return (rawCode.match(/.{1,4}/g) ?? []).join('-');
       }
     );
 
@@ -2476,7 +2485,7 @@ async function completeRecovery(req, res) {
   } catch (error) {
     console.error(
       'Final account recovery error:',
-      error.message
+      getErrorMessage(error)
     );
 
     return res.status(500).json({
@@ -2486,7 +2495,7 @@ async function completeRecovery(req, res) {
   }
 }
 
-module.exports = {
+export {
   registerOptions,
   registerVerify,
   verifyEmail,

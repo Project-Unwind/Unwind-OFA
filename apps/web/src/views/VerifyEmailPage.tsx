@@ -21,7 +21,7 @@ interface VerificationResponse {
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error
-    ? error.message
+    ? getErrorMessage(error)
     : 'Unable to verify your email address. Please try again.';
 }
 

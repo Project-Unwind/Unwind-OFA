@@ -16,4 +16,4 @@ const webauthnConfig = {
   expectedOrigin: process.env.EXPECTED_ORIGIN as string,
 };
 
-module.exports = { webauthnConfig };
+export { webauthnConfig };

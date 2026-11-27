@@ -18,7 +18,7 @@ interface EmergencyLockResponse {
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error
-    ? error.message
+    ? getErrorMessage(error)
     : 'Something went wrong. Please try again.';
 }
 
