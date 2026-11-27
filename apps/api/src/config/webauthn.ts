@@ -2,7 +2,7 @@ const requiredVariables = [
   'RP_NAME',
   'RP_ID',
   'EXPECTED_ORIGIN',
-];
+] as const;
 
 for (const variable of requiredVariables) {
   if (!process.env[variable]) {
@@ -11,9 +11,9 @@ for (const variable of requiredVariables) {
 }
 
 const webauthnConfig = {
-  rpName: process.env.RP_NAME,
-  rpID: process.env.RP_ID,
-  expectedOrigin: process.env.EXPECTED_ORIGIN,
+  rpName: process.env.RP_NAME as string,
+  rpID: process.env.RP_ID as string,
+  expectedOrigin: process.env.EXPECTED_ORIGIN as string,
 };
 
 module.exports = { webauthnConfig };
