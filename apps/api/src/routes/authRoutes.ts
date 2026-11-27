@@ -1,7 +1,7 @@
-const express = require('express');
-const rateLimit = require('express-rate-limit');
+import express, { type Request, type Response, type NextFunction } from 'express';
+import rateLimit from 'express-rate-limit';
 
-const {
+import {
   registerOptions,
   registerVerify,
   verifyEmail,
@@ -18,7 +18,7 @@ const {
   recoveryRegistrationOptions,
   verifyRecoveryRegistration,
   completeRecovery,
-} = require('../controllers/authController');
+} from '../controllers/authController';
 
 const router = express.Router();
 
@@ -27,14 +27,19 @@ const TRUSTED_FRONTEND_ORIGIN = new URL(
 ).origin;
 
 // Reject cookie-authenticated requests from untrusted origins.
-function requireTrustedOrigin(req, res, next) {
+function requireTrustedOrigin(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): void {
   const requestOrigin = req.get('origin');
 
   if (!requestOrigin || requestOrigin !== TRUSTED_FRONTEND_ORIGIN) {
-    return res.status(403).json({
+    res.status(403).json({
       success: false,
       message: 'Request origin is not allowed.',
     });
+    return;
   }
 
   next();
@@ -254,4 +259,4 @@ router.post(
   completeRecovery
 );
 
-module.exports = router;
+export default router;
